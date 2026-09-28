@@ -76,3 +76,12 @@ class User(Base):
         "CustomerProfile",
         back_populates="user",
     )
+    
+    # =====================================================
+    # PAYMENT TRANSACTIONS
+    # =====================================================
+
+    payment_transactions = relationship(
+        "PaymentTransaction",
+        back_populates="created_by_user",
+    )

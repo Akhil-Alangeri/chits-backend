@@ -1,4 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    File,
+    Form,
+    UploadFile,
+)
+
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -22,7 +30,6 @@ from app.services.company_profile_service import (
     update_login_id,
     update_password,
 )
-
 
 router = APIRouter(
     prefix="/company",
@@ -73,13 +80,29 @@ def get_profile(
 # UPDATE COMPANY PROFILE
 # =========================================================
 
+# =========================================================
+# UPDATE COMPANY PROFILE
+# =========================================================
+
+# =========================================================
+# UPDATE COMPANY PROFILE
+# =========================================================
+
 @router.put(
     "/profile",
     response_model=CompanyProfileResponse
 )
-def update_profile(
+async def update_profile(
 
-    data: CompanyProfileUpdate,
+    company_name: str = Form(...),
+
+    email: str = Form(""),
+
+    mobile: str = Form(""),
+
+    address: str = Form(""),
+
+    logo: UploadFile | None = File(None),
 
     db: Session = Depends(get_db),
 
@@ -89,12 +112,15 @@ def update_profile(
 
 ):
 
-    result = update_company_profile(
+    result = await update_company_profile(
         db=db,
         user=current_user,
-        data=data
+        company_name=company_name,
+        email=email,
+        mobile=mobile,
+        address=address,
+        logo=logo,
     )
-
 
     if result.get("error") == "company_not_found":
 
@@ -103,13 +129,25 @@ def update_profile(
             detail="Company not found."
         )
 
+    if result.get("error") == "invalid_logo_type":
+
+        raise HTTPException(
+            status_code=400,
+            detail="Only PNG and JPEG images are allowed."
+        )
+
+    if result.get("error") == "logo_too_large":
+
+        raise HTTPException(
+            status_code=400,
+            detail="Logo size must be less than 2 MB."
+        )
 
     return {
         "success": True,
         "message": "Company profile updated successfully.",
         "data": result
     }
-
 
 # =========================================================
 # UPDATE LOGIN ID

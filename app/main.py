@@ -11,13 +11,12 @@ from app.models import Company, User
 from app.routes.company import router as company_router
 from app.routes.auth import router as auth_router
 from app.routes.chit_group import router as chit_group_router
-from app.routes.customer_profile import router as customer_profile_router
+from app.routes.customer_profile import router as admin_customer_profile_router
 from app.routes.chit_member import router as chit_member_router
 from app.routes.chit_installment import router as chit_installment_router
 from app.routes.payment_transaction import (
     router as payment_transaction_router,
 )
-
 from app.routes.payment_summary import router as payment_summary_router
 from app.routes.notification import router as notification_router
 from app.routes.dashboard_router import router as dashboard_router
@@ -31,6 +30,15 @@ from app.routes.expenses_reports_router import router as expenses_reports_router
 from app.routes.chit_reports import router as chit_reports_router
 from app.routes.ledger_reports import router as ledger_reports_router
 from app.routes.company_profile import router as company_profile_router
+from app.routes.customer.customer_chit_router import router as customer_chit_router
+from app.routes.customer.customer_dashboard_router import router as customer_dashboard_router
+# ==================== Customer Routers ==============================
+
+from app.routes.customer.customer_auth_router import router as customer_auth_router 
+from app.routes.customer.customer_profile_route import router as customer_profile_router
+from app.routes.customer.ticket_router import router as ticket_router
+from app.routes.admin_ticket_router import router  as admin_ticket_router
+
 
 
 from app.core.database import Base, get_db,engine
@@ -75,7 +83,7 @@ app.add_middleware(
 app.include_router(company_router)
 app.include_router(auth_router)
 app.include_router(chit_group_router)
-app.include_router(customer_profile_router)
+app.include_router(admin_customer_profile_router)
 app.include_router(chit_member_router)
 app.include_router(chit_installment_router)
 app.include_router(payment_transaction_router)
@@ -92,6 +100,13 @@ app.include_router(expenses_reports_router)
 app.include_router(chit_reports_router)
 app.include_router(ledger_reports_router)
 app.include_router(company_profile_router)
+app.include_router(customer_auth_router)
+app.include_router(customer_chit_router)
+app.include_router(customer_dashboard_router)
+app.include_router(customer_profile_router)
+app.include_router(ticket_router)
+app.include_router(admin_ticket_router)
+
 
 @app.get("/")
 def home():

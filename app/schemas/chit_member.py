@@ -26,30 +26,18 @@ class ChitMemberUpdate(BaseModel):
 
 
 class ChitMemberResponse(BaseModel):
-
     id: int
-
     chit_id: int
-
     customer_profile_id: int
-
     member_number: int
-
     member_name: str
-
     status: str
-
     joined_at: datetime | None
-
     confirmed_at: datetime | None
-
     cancelled_at: datetime | None
-
     cancel_reason: str | None
-
     notes: str | None
     slot_number:int| None =None
-
     model_config = ConfigDict(
         from_attributes=True
     )

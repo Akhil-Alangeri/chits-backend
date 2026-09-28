@@ -46,6 +46,7 @@ class Company(Base):
         default="pending",
         nullable=False
     )
+    
     created_at = Column(
         DateTime,
         server_default=func.now(),
@@ -58,20 +59,23 @@ class Company(Base):
         onupdate=func.now(),
         nullable=False
     )
-
+    
     users = relationship(
         "User",
         back_populates="company"
     )
+    
     login_id = Column(
-    String(150),
-    nullable=True,
-    unique=True
+        String(150),
+        nullable=True,
+        unique=True
     )
+    
     password_hash = Column(
         String(255),
         nullable=True
     )
+    
     users = relationship(
         "User",
         back_populates="company"
@@ -82,11 +86,13 @@ class Company(Base):
         back_populates="company",
         cascade="all, delete-orphan"
     )  
+    
     customer_profiles = relationship(
         "CustomerProfile",
         back_populates="company",
         cascade="all, delete-orphan",
-    )     
+    )  
+       
     chit_lifts = relationship(
         "ChitLift",
         back_populates="company",

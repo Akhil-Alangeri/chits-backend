@@ -1,4 +1,8 @@
 from sqlalchemy.orm import Session
+from pathlib import Path
+from uuid import uuid4
+
+from fastapi import UploadFile
 
 from app.models.admin.company import Company
 from app.models.admin.user import User
@@ -47,10 +51,14 @@ def get_company_profile(
 # UPDATE COMPANY PROFILE
 # =========================================================
 
-def update_company_profile(
+async def update_company_profile(
     db: Session,
     user: User,
-    data
+    company_name: str,
+    email: str,
+    mobile: str,
+    address: str,
+    logo: UploadFile | None = None,
 ):
 
     company = (
@@ -66,54 +74,131 @@ def update_company_profile(
             "error": "company_not_found"
         }
 
-    # -----------------------------------------
+    # =========================================
     # COMPANY NAME
-    # -----------------------------------------
+    # =========================================
 
-    if data.company_name is not None:
+    if company_name is not None:
+        company.company_name = company_name.strip()
 
-        company.company_name = data.company_name.strip()
-
-
-    # -----------------------------------------
+    # =========================================
     # EMAIL
-    # -----------------------------------------
+    # =========================================
 
-    if data.email is not None:
+    if email is not None:
+        company.email = email.strip()
 
-        company.email = str(data.email)
-
-
-    # -----------------------------------------
+    # =========================================
     # MOBILE
-    # -----------------------------------------
+    # =========================================
 
-    if data.mobile is not None:
+    if mobile is not None:
+        company.mobile = mobile.strip()
 
-        company.mobile = data.mobile.strip()
-
-
-    # -----------------------------------------
+    # =========================================
     # ADDRESS
-    # -----------------------------------------
+    # =========================================
 
-    if data.address is not None:
+    if address is not None:
+        company.address = address.strip()
 
-        company.address = data.address.strip()
+    # =========================================
+    # COMPANY LOGO
+    # =========================================
 
+    if logo is not None:
 
-    # -----------------------------------------
-    # LOGO URL
-    # -----------------------------------------
+        # -----------------------------------------
+        # ALLOWED IMAGE TYPES
+        # -----------------------------------------
 
-    if data.logo_url is not None:
+        allowed_types = {
+            "image/png": ".png",
+            "image/jpeg": ".jpg",
+        }
 
-        company.logo_url = data.logo_url.strip()
+        if logo.content_type not in allowed_types:
 
+            return {
+                "error": "invalid_logo_type"
+            }
+
+        # -----------------------------------------
+        # READ FILE
+        # -----------------------------------------
+
+        file_content = await logo.read()
+
+        # -----------------------------------------
+        # MAXIMUM 2 MB
+        # -----------------------------------------
+
+        max_size = 2 * 1024 * 1024
+
+        if len(file_content) > max_size:
+
+            return {
+                "error": "logo_too_large"
+            }
+
+        # -----------------------------------------
+        # CREATE LOGO DIRECTORY
+        # -----------------------------------------
+
+        upload_dir = Path(
+            "uploads/company-logos"
+        )
+
+        upload_dir.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+        # -----------------------------------------
+        # UNIQUE FILE NAME
+        # -----------------------------------------
+
+        extension = allowed_types[
+            logo.content_type
+        ]
+
+        filename = (
+            f"company_{uuid4().hex}"
+            f"{extension}"
+        )
+
+        file_path = upload_dir / filename
+
+        # -----------------------------------------
+        # SAVE FILE
+        # -----------------------------------------
+
+        with open(
+            file_path,
+            "wb"
+        ) as file:
+
+            file.write(file_content)
+
+        # -----------------------------------------
+        # SAVE URL IN DATABASE
+        # -----------------------------------------
+
+        company.logo_url = (
+            f"/uploads/company-logos/{filename}"
+        )
+
+    # =========================================
+    # SAVE DATABASE
+    # =========================================
 
     db.commit()
 
     db.refresh(company)
+
+    # =========================================
+    # RESPONSE
+    # =========================================
 
     return {
         "id": company.id,
@@ -125,8 +210,6 @@ def update_company_profile(
         "status": company.status,
         "login_id": user.login_id,
     }
-
-
 # =========================================================
 # UPDATE LOGIN ID
 # =========================================================

@@ -12,3 +12,6 @@ from app.models.admin.loan import Loan
 from app.models.admin.loan_transaction import LoanTransaction
 
 from app.models.admin.expenses import Expense
+# from app.models.admin.customer_account import CustomerAccount
+from app.models.customer import customer_otp
+from app.models.support.ticket import SupportTicket

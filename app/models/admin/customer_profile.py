@@ -7,6 +7,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy import BigInteger
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -48,6 +49,16 @@ class CustomerProfile(Base):
         nullable=True,
         index=True,
     )
+    # =====================================================
+    # GLOBAL CUSTOMER ACCOUNT
+    # =====================================================
+
+    # customer_account_id = Column(
+    #     BigInteger,
+    #     ForeignKey("customer_accounts.id"),
+    #     nullable=True,
+    #     index=True,
+    # )
 
     # =====================================================
     # COMPANY
@@ -141,3 +152,8 @@ class CustomerProfile(Base):
         "ChitMember",
         back_populates="customer_profile",
     )
+    
+    # customer_account = relationship(
+    #     "CustomerAccount",
+    #     back_populates="customer_profiles",
+    # )

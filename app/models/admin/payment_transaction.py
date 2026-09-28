@@ -136,4 +136,5 @@ class PaymentTransaction(Base):
 
     created_by_user = relationship(
         "User",
+        back_populates="payment_transactions",
     )

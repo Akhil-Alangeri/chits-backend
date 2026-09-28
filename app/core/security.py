@@ -1,7 +1,8 @@
 import bcrypt
 
 from datetime import datetime, timedelta, timezone
-from jose import jwt,JWTError
+
+from jose import jwt, JWTError
 
 
 # =========================================================
@@ -12,6 +13,7 @@ SECRET_KEY = "CHANGE_THIS_TO_A_LONG_RANDOM_SECRET"
 
 ALGORITHM = "HS256"
 
+# 5 * 60 = 300 minutes = 5 HOURS
 ACCESS_TOKEN_EXPIRE_MINUTES = 5 * 60
 
 
@@ -55,24 +57,45 @@ def create_access_token(
     expires_minutes: int = ACCESS_TOKEN_EXPIRE_MINUTES
 ) -> str:
 
+    # Current UTC time
+    now = datetime.now(timezone.utc)
+
+    # Copy the data provided by the caller
     payload = data.copy()
 
-    expire = (
-        datetime.now(timezone.utc)
-        + timedelta(minutes=expires_minutes)
+    # Calculate expiry time
+    expire = now + timedelta(
+        minutes=expires_minutes
     )
 
+    # =====================================================
+    # JWT CLAIMS
+    # =====================================================
+
     payload.update({
-        "exp": expire
+
+        # Token issued time
+        "iat": now,
+
+        # Token expiry time
+        "exp": expire,
+
     })
+
+    # =====================================================
+    # CREATE JWT
+    # =====================================================
 
     return jwt.encode(
         payload,
         SECRET_KEY,
         algorithm=ALGORITHM
     )
-    
-# DECODE 
+
+
+# =========================================================
+# DECODE ACCESS TOKEN
+# =========================================================
 
 def decode_access_token(token: str):
 
