@@ -4,6 +4,7 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Request,
     status,
 )
 
@@ -27,6 +28,7 @@ from app.services.chit_member_service import (
     update_chit_member,
     remove_chit_member,
 )
+from app.services.audit_log_service import get_request_metadata
 
 
 router = APIRouter(
@@ -47,15 +49,21 @@ router = APIRouter(
 def add_member(
     chit_id: int,
     member_data: ChitMemberCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+
+    ip_address, user_agent = get_request_metadata(request)
 
     result = add_chit_member(
         db=db,
         company_id=current_user.company_id,
         chit_id=chit_id,
         member_data=member_data,
+        created_by=current_user.id,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
 
 
@@ -177,15 +185,21 @@ def get_member(
 def update_member(
     member_id: int,
     member_data: ChitMemberUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+
+    ip_address, user_agent = get_request_metadata(request)
 
     member = update_chit_member(
         db=db,
         company_id=current_user.company_id,
         member_id=member_id,
         member_data=member_data,
+        updated_by=current_user.id,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
 
     if not member:
@@ -209,15 +223,21 @@ def update_member(
 def remove_member(
     chit_id: int,
     member_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+
+    ip_address, user_agent = get_request_metadata(request)
 
     result = remove_chit_member(
         db=db,
         company_id=current_user.company_id,
         chit_id=chit_id,
         member_id=member_id,
+        removed_by=current_user.id,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
 
 

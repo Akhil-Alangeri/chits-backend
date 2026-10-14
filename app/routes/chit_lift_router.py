@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -20,6 +20,7 @@ from app.services.chit_lift_service import (
     get_member_lifts,
     update_chit_lift,
 )
+from app.services.audit_log_service import get_request_metadata
 
 
 router = APIRouter(
@@ -85,6 +86,7 @@ def create_lift(
     chit_id: int,
     member_id: int,
     lift_data: ChitLiftCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -94,12 +96,17 @@ def create_lift(
             detail="User is not associated with a company.",
         )
 
+    ip_address, user_agent = get_request_metadata(request)
+
     result = create_chit_lift(
         db=db,
         company_id=current_user.company_id,
         chit_id=chit_id,
         member_id=member_id,
         lift_data=lift_data,
+        created_by=current_user.id,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
 
     if isinstance(result, dict):
@@ -296,6 +303,7 @@ def update_lift(
     chit_id: int,
     lift_id: int,
     lift_data: ChitLiftUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -305,12 +313,17 @@ def update_lift(
             detail="User is not associated with a company.",
         )
 
+    ip_address, user_agent = get_request_metadata(request)
+
     result = update_chit_lift(
         db=db,
         company_id=current_user.company_id,
         chit_id=chit_id,
         lift_id=lift_id,
         lift_data=lift_data,
+        updated_by=current_user.id,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
 
     if isinstance(result, dict):

@@ -2,7 +2,7 @@
 # CUSTOMER SUPPORT TICKET ROUTES
 # ============================================================
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -24,6 +24,7 @@ from app.services.support.ticket_service import (
     get_customer_profile_for_company,
     get_customer_mobile_by_profile_id,
 )
+from app.services.audit_log_service import get_request_metadata
 
 
 # ============================================================
@@ -121,6 +122,7 @@ def get_customer_mobile(
 )
 def create_ticket(
     data: CustomerSupportTicketCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_customer: dict = Depends(get_current_customer),
 ):
@@ -166,6 +168,8 @@ def create_ticket(
             ),
         )
 
+    ip_address, user_agent = get_request_metadata(request)
+
     # --------------------------------------------------------
     # Create ticket
     # --------------------------------------------------------
@@ -180,6 +184,8 @@ def create_ticket(
             description=data.description,
             category=data.category,
             priority=data.priority,
+            ip_address=ip_address,
+            user_agent=user_agent,
         )
 
         ticket.messages
@@ -409,6 +415,7 @@ def get_ticket(
 def add_message(
     ticket_id: int,
     data: TicketMessageCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_customer: dict = Depends(get_current_customer),
 ):
@@ -434,6 +441,8 @@ def add_message(
         current_customer=current_customer,
     )
 
+    ip_address, user_agent = get_request_metadata(request)
+
     # --------------------------------------------------------
     # Create message
     # --------------------------------------------------------
@@ -445,6 +454,8 @@ def add_message(
             mobile=mobile,
             ticket_id=ticket_id,
             message=data.message,
+            ip_address=ip_address,
+            user_agent=user_agent,
         )
 
         return message
@@ -467,6 +478,3 @@ def add_message(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=error_message,
         )
-        
-        
-        

@@ -4,6 +4,7 @@ from fastapi import (
     HTTPException,
     File,
     Form,
+    Request,
     UploadFile,
 )
 
@@ -29,6 +30,9 @@ from app.services.company_profile_service import (
     update_company_profile,
     update_login_id,
     update_password,
+)
+from app.services.audit_log_service import (
+    get_request_metadata,
 )
 
 router = APIRouter(
@@ -94,6 +98,8 @@ def get_profile(
 )
 async def update_profile(
 
+    request: Request,
+
     company_name: str = Form(...),
 
     email: str = Form(""),
@@ -112,6 +118,8 @@ async def update_profile(
 
 ):
 
+    ip_address, user_agent = get_request_metadata(request)
+
     result = await update_company_profile(
         db=db,
         user=current_user,
@@ -120,6 +128,8 @@ async def update_profile(
         mobile=mobile,
         address=address,
         logo=logo,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
 
     if result.get("error") == "company_not_found":
@@ -161,6 +171,8 @@ def change_login_id(
 
     data: LoginIdUpdate,
 
+    request: Request,
+
     db: Session = Depends(get_db),
 
     current_user: User = Depends(
@@ -169,10 +181,14 @@ def change_login_id(
 
 ):
 
+    ip_address, user_agent = get_request_metadata(request)
+
     result = update_login_id(
         db=db,
         user=current_user,
-        new_login_id=data.login_id
+        new_login_id=data.login_id,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
 
 
@@ -211,6 +227,8 @@ def change_password(
 
     data: PasswordUpdate,
 
+    request: Request,
+
     db: Session = Depends(get_db),
 
     current_user: User = Depends(
@@ -218,6 +236,8 @@ def change_password(
     )
 
 ):
+
+    ip_address, user_agent = get_request_metadata(request)
 
     result = update_password(
 
@@ -229,7 +249,11 @@ def change_password(
 
         new_password=data.new_password,
 
-        confirm_password=data.confirm_password
+        confirm_password=data.confirm_password,
+
+        ip_address=ip_address,
+
+        user_agent=user_agent,
 
     )
 

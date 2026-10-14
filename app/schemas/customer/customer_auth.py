@@ -2,7 +2,6 @@ from pydantic import BaseModel, Field
 
 
 class CustomerSendOTPRequest(BaseModel):
-
     mobile: str = Field(
         ...,
         min_length=10,
@@ -11,18 +10,12 @@ class CustomerSendOTPRequest(BaseModel):
 
 
 class CustomerSendOTPResponse(BaseModel):
-
     success: bool
-
     message: str
-
     otp_expires_in: int | None = None
-
     development_otp: str | None = None
 
-
 class CustomerVerifyOTPRequest(BaseModel):
-
     mobile: str = Field(
         ...,
         min_length=10,
@@ -37,13 +30,8 @@ class CustomerVerifyOTPRequest(BaseModel):
 
 
 class CustomerTokenResponse(BaseModel):
-
     success: bool
-
     message: str
-
     access_token: str
-
     token_type: str = "bearer"
-
     expires_in: int | None = None

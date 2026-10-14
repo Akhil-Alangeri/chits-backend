@@ -2,6 +2,7 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Request,
     status,
     Form,
     File,
@@ -16,6 +17,8 @@ from app.schemas.company import (
     CompanyCreate,
     CompanyResponse
 )
+from app.schemas.company import CompanyStatusUpdate
+from app.services.company_service import change_company_status
 
 from app.services.company_service import (
     create_company,
@@ -28,12 +31,22 @@ from app.services.company_service import (
 from app.services.email_service import (
     send_company_credentials
 )
+from app.services.audit_log_service import (
+    get_request_metadata,
+)
 
 
 router = APIRouter(
     prefix="/companies",
     tags=["Companies"]
 )
+
+
+@router.patch("/{company_id}/status", response_model=CompanyResponse)
+def update_company_status(company_id: int, data: CompanyStatusUpdate, request: Request,
+                          db: Session = Depends(get_db)):
+    ip_address, user_agent = get_request_metadata(request)
+    return change_company_status(db, company_id, data.status, ip_address, user_agent)
 
 
 # =========================================================
@@ -46,6 +59,7 @@ router = APIRouter(
     status_code=status.HTTP_201_CREATED
 )
 def register_company(
+    request: Request,
     company_name: str = Form(...),
     mobile: str = Form(...),
     email: str = Form(...),
@@ -54,6 +68,8 @@ def register_company(
     db: Session = Depends(get_db)
 ):
 
+    ip_address, user_agent = get_request_metadata(request)
+
     result = create_company(
         db=db,
         company_name=company_name,
@@ -61,6 +77,8 @@ def register_company(
         email=email,
         address=address,
         logo=logo,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
 
     if isinstance(result, dict):
@@ -151,11 +169,16 @@ def get_company(
 )
 async def approve_company_registration(
     company_id: int,
+    request: Request,
     db: Session = Depends(get_db)
 ):
+    ip_address, user_agent = get_request_metadata(request)
+
     result = approve_company(
         db,
-        company_id
+        company_id,
+        ip_address,
+        user_agent,
     )
     # Company not found
     if not result:

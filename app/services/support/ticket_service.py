@@ -11,6 +11,10 @@ from sqlalchemy.orm import Session
 from app.models.support.ticket import SupportTicket, TicketMessage
 from app.models.admin.user import User
 from app.models.admin.customer_profile import CustomerProfile
+from app.services.audit_log_service import (
+    create_audit_log,
+    snapshot_model,
+)
 
 
 # ============================================================
@@ -60,6 +64,73 @@ VALID_TICKET_CATEGORIES = {
 
 SENDER_TYPE_CUSTOMER = "customer"
 SENDER_TYPE_ADMIN = "admin"
+
+
+TICKET_AUDIT_FIELDS = [
+    "id",
+    "ticket_number",
+    "customer_profile_id",
+    "subject",
+    "description",
+    "category",
+    "priority",
+    "status",
+    "assigned_to_user_id",
+    "resolved_at",
+    "closed_at",
+]
+
+TICKET_MESSAGE_AUDIT_FIELDS = [
+    "id",
+    "ticket_id",
+    "sender_type",
+    "sender_user_id",
+    "sender_customer_profile_id",
+]
+
+
+def _ticket_snapshot(ticket: SupportTicket) -> dict:
+    return snapshot_model(
+        ticket,
+        TICKET_AUDIT_FIELDS,
+    )
+
+
+def _ticket_message_snapshot(
+    ticket_message: TicketMessage,
+) -> dict:
+    return snapshot_model(
+        ticket_message,
+        TICKET_MESSAGE_AUDIT_FIELDS,
+    )
+
+
+def _create_ticket_audit(
+    db: Session,
+    ticket: SupportTicket,
+    *,
+    action: str,
+    description: str,
+    user_id: int | None = None,
+    old_values: dict[str, Any] | None = None,
+    new_values: dict[str, Any] | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+) -> None:
+    create_audit_log(
+        db=db,
+        company_id=ticket.company_id,
+        user_id=user_id,
+        action=action,
+        module="Support Tickets",
+        entity_type="SupportTicket",
+        entity_id=ticket.id,
+        description=description,
+        old_values=old_values,
+        new_values=new_values,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
 
 
 # ============================================================
@@ -335,6 +406,8 @@ def create_customer_ticket(
     description: str,
     category: str = "other",
     priority: str = "medium",
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ) -> SupportTicket:
     """
     Create a customer support ticket.
@@ -388,6 +461,21 @@ def create_customer_ticket(
     )
 
     db.add(ticket)
+    db.flush()
+
+    _create_ticket_audit(
+        db,
+        ticket,
+        action="CREATE",
+        description=(
+            f"Customer created support ticket "
+            f"'{ticket.ticket_number}'"
+        ),
+        new_values=_ticket_snapshot(ticket),
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
     db.commit()
     db.refresh(ticket)
 
@@ -641,6 +729,8 @@ def create_customer_message(
     mobile: str,
     ticket_id: int,
     message: str,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ) -> TicketMessage:
     """
     Add a customer reply to a ticket.
@@ -680,6 +770,8 @@ def create_customer_message(
             "Closed tickets cannot receive new messages."
         )
 
+    old_ticket_values = _ticket_snapshot(ticket)
+
     ticket_message = TicketMessage(
         ticket_id=ticket.id,
         sender_type=SENDER_TYPE_CUSTOMER,
@@ -699,6 +791,43 @@ def create_customer_message(
         ticket.status = TICKET_STATUS_IN_PROGRESS
 
     ticket.updated_at = datetime.utcnow()
+
+    db.flush()
+
+    create_audit_log(
+        db=db,
+        company_id=ticket.company_id,
+        user_id=None,
+        action="MESSAGE_CREATE",
+        module="Support Ticket Messages",
+        entity_type="TicketMessage",
+        entity_id=ticket_message.id,
+        description=(
+            f"Customer added a message to support ticket "
+            f"'{ticket.ticket_number}'"
+        ),
+        new_values=_ticket_message_snapshot(ticket_message),
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
+    new_ticket_values = _ticket_snapshot(ticket)
+
+    if old_ticket_values["status"] != new_ticket_values["status"]:
+        _create_ticket_audit(
+            db,
+            ticket,
+            action="STATUS_CHANGE",
+            description=(
+                f"Changed support ticket '{ticket.ticket_number}' "
+                f"status from '{old_ticket_values['status']}' to "
+                f"'{new_ticket_values['status']}'"
+            ),
+            old_values=old_ticket_values,
+            new_values=new_ticket_values,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
 
     db.commit()
     db.refresh(ticket_message)
@@ -760,6 +889,9 @@ def create_admin_ticket(
     description: str,
     category: str = "other",
     priority: str = "medium",
+    created_by: int | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ) -> SupportTicket:
     """
     Allow company staff/admin to create a ticket on behalf
@@ -807,6 +939,22 @@ def create_admin_ticket(
     )
 
     db.add(ticket)
+    db.flush()
+
+    _create_ticket_audit(
+        db,
+        ticket,
+        action="CREATE",
+        description=(
+            f"Created support ticket "
+            f"'{ticket.ticket_number}'"
+        ),
+        user_id=created_by,
+        new_values=_ticket_snapshot(ticket),
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
     db.commit()
     db.refresh(ticket)
 
@@ -906,6 +1054,8 @@ def create_admin_message(
     user_id: int,
     ticket_id: int,
     message: str,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ) -> TicketMessage:
     """
     Add a company/admin reply to a ticket.
@@ -934,6 +1084,8 @@ def create_admin_message(
             "Closed tickets cannot receive new messages."
         )
 
+    old_ticket_values = _ticket_snapshot(ticket)
+
     ticket_message = TicketMessage(
         ticket_id=ticket.id,
         sender_type=SENDER_TYPE_ADMIN,
@@ -950,6 +1102,44 @@ def create_admin_message(
         ticket.status = TICKET_STATUS_IN_PROGRESS
 
     ticket.updated_at = datetime.utcnow()
+
+    db.flush()
+
+    create_audit_log(
+        db=db,
+        company_id=ticket.company_id,
+        user_id=user_id,
+        action="MESSAGE_CREATE",
+        module="Support Ticket Messages",
+        entity_type="TicketMessage",
+        entity_id=ticket_message.id,
+        description=(
+            f"Added an admin message to support ticket "
+            f"'{ticket.ticket_number}'"
+        ),
+        new_values=_ticket_message_snapshot(ticket_message),
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
+    new_ticket_values = _ticket_snapshot(ticket)
+
+    if old_ticket_values["status"] != new_ticket_values["status"]:
+        _create_ticket_audit(
+            db,
+            ticket,
+            action="STATUS_CHANGE",
+            description=(
+                f"Changed support ticket '{ticket.ticket_number}' "
+                f"status from '{old_ticket_values['status']}' to "
+                f"'{new_ticket_values['status']}'"
+            ),
+            user_id=user_id,
+            old_values=old_ticket_values,
+            new_values=new_ticket_values,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
 
     db.commit()
     db.refresh(ticket_message)
@@ -991,6 +1181,9 @@ def update_ticket_status(
     company_id: int,
     ticket_id: int,
     status: str,
+    updated_by: int | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ) -> SupportTicket:
     """
     Update ticket status.
@@ -1008,6 +1201,8 @@ def update_ticket_status(
         )
 
     status = _validate_status(status)
+
+    old_values = _ticket_snapshot(ticket)
 
     now = datetime.utcnow()
 
@@ -1034,6 +1229,26 @@ def update_ticket_status(
     }:
         ticket.closed_at = None
 
+    db.flush()
+
+    new_values = _ticket_snapshot(ticket)
+
+    _create_ticket_audit(
+        db,
+        ticket,
+        action="STATUS_CHANGE",
+        description=(
+            f"Changed support ticket '{ticket.ticket_number}' "
+            f"status from '{old_values['status']}' to "
+            f"'{new_values['status']}'"
+        ),
+        user_id=updated_by,
+        old_values=old_values,
+        new_values=new_values,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
     db.commit()
     db.refresh(ticket)
 
@@ -1049,6 +1264,9 @@ def update_ticket_priority(
     company_id: int,
     ticket_id: int,
     priority: str,
+    updated_by: int | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ) -> SupportTicket:
     """
     Update ticket priority.
@@ -1067,8 +1285,30 @@ def update_ticket_priority(
 
     priority = _validate_priority(priority)
 
+    old_values = _ticket_snapshot(ticket)
+
     ticket.priority = priority
     ticket.updated_at = datetime.utcnow()
+
+    db.flush()
+
+    new_values = _ticket_snapshot(ticket)
+
+    _create_ticket_audit(
+        db,
+        ticket,
+        action="PRIORITY_CHANGE",
+        description=(
+            f"Changed support ticket '{ticket.ticket_number}' "
+            f"priority from '{old_values['priority']}' to "
+            f"'{new_values['priority']}'"
+        ),
+        user_id=updated_by,
+        old_values=old_values,
+        new_values=new_values,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
 
     db.commit()
     db.refresh(ticket)
@@ -1085,6 +1325,9 @@ def update_ticket_category(
     company_id: int,
     ticket_id: int,
     category: str,
+    updated_by: int | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ) -> SupportTicket:
     """
     Update ticket category.
@@ -1103,8 +1346,30 @@ def update_ticket_category(
 
     category = _validate_category(category)
 
+    old_values = _ticket_snapshot(ticket)
+
     ticket.category = category
     ticket.updated_at = datetime.utcnow()
+
+    db.flush()
+
+    new_values = _ticket_snapshot(ticket)
+
+    _create_ticket_audit(
+        db,
+        ticket,
+        action="CATEGORY_CHANGE",
+        description=(
+            f"Changed support ticket '{ticket.ticket_number}' "
+            f"category from '{old_values['category']}' to "
+            f"'{new_values['category']}'"
+        ),
+        user_id=updated_by,
+        old_values=old_values,
+        new_values=new_values,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
 
     db.commit()
     db.refresh(ticket)
@@ -1121,6 +1386,9 @@ def assign_ticket(
     company_id: int,
     ticket_id: int,
     assigned_to_user_id: int | None,
+    updated_by: int | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ) -> SupportTicket:
     """
     Assign a ticket to a company user.
@@ -1139,6 +1407,8 @@ def assign_ticket(
             "Ticket not found or you are not authorized to update it."
         )
 
+    old_values = _ticket_snapshot(ticket)
+
     # --------------------------------------------------------
     # Remove assignment
     # --------------------------------------------------------
@@ -1147,6 +1417,25 @@ def assign_ticket(
 
         ticket.assigned_to_user_id = None
         ticket.updated_at = datetime.utcnow()
+
+        db.flush()
+
+        new_values = _ticket_snapshot(ticket)
+
+        _create_ticket_audit(
+            db,
+            ticket,
+            action="ASSIGN",
+            description=(
+                f"Removed assignment from support ticket "
+                f"'{ticket.ticket_number}'"
+            ),
+            user_id=updated_by,
+            old_values=old_values,
+            new_values=new_values,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
 
         db.commit()
         db.refresh(ticket)
@@ -1177,6 +1466,42 @@ def assign_ticket(
     if ticket.status == TICKET_STATUS_OPEN:
         ticket.status = TICKET_STATUS_IN_PROGRESS
 
+    db.flush()
+
+    new_values = _ticket_snapshot(ticket)
+
+    _create_ticket_audit(
+        db,
+        ticket,
+        action="ASSIGN",
+        description=(
+            f"Assigned support ticket '{ticket.ticket_number}' "
+            f"to user #{assigned_to_user_id}"
+        ),
+        user_id=updated_by,
+        old_values=old_values,
+        new_values=new_values,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
+    if old_values["status"] != new_values["status"]:
+        _create_ticket_audit(
+            db,
+            ticket,
+            action="STATUS_CHANGE",
+            description=(
+                f"Changed support ticket '{ticket.ticket_number}' "
+                f"status from '{old_values['status']}' to "
+                f"'{new_values['status']}'"
+            ),
+            user_id=updated_by,
+            old_values=old_values,
+            new_values=new_values,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+
     db.commit()
     db.refresh(ticket)
 
@@ -1197,6 +1522,9 @@ def update_ticket(
     priority: str | None = None,
     status: str | None = None,
     assigned_to_user_id: int | None = None,
+    updated_by: int | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ) -> SupportTicket:
     """
     General admin ticket update.
@@ -1214,6 +1542,8 @@ def update_ticket(
         raise ValueError(
             "Ticket not found or you are not authorized to update it."
         )
+
+    old_values = _ticket_snapshot(ticket)
 
     # --------------------------------------------------------
     # Subject
@@ -1312,6 +1642,58 @@ def update_ticket(
 
     ticket.updated_at = datetime.utcnow()
 
+    db.flush()
+
+    new_values = _ticket_snapshot(ticket)
+
+    if old_values["status"] != new_values["status"]:
+        action = "STATUS_CHANGE"
+        description = (
+            f"Changed support ticket '{ticket.ticket_number}' "
+            f"status from '{old_values['status']}' to "
+            f"'{new_values['status']}'"
+        )
+    elif old_values["priority"] != new_values["priority"]:
+        action = "PRIORITY_CHANGE"
+        description = (
+            f"Changed support ticket '{ticket.ticket_number}' "
+            f"priority from '{old_values['priority']}' to "
+            f"'{new_values['priority']}'"
+        )
+    elif old_values["category"] != new_values["category"]:
+        action = "CATEGORY_CHANGE"
+        description = (
+            f"Changed support ticket '{ticket.ticket_number}' "
+            f"category from '{old_values['category']}' to "
+            f"'{new_values['category']}'"
+        )
+    elif (
+        old_values["assigned_to_user_id"]
+        != new_values["assigned_to_user_id"]
+    ):
+        action = "ASSIGN"
+        description = (
+            f"Updated assignment for support ticket "
+            f"'{ticket.ticket_number}'"
+        )
+    else:
+        action = "UPDATE"
+        description = (
+            f"Updated support ticket '{ticket.ticket_number}'"
+        )
+
+    _create_ticket_audit(
+        db,
+        ticket,
+        action=action,
+        description=description,
+        user_id=updated_by,
+        old_values=old_values,
+        new_values=new_values,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
     db.commit()
     db.refresh(ticket)
 
@@ -1326,6 +1708,9 @@ def delete_ticket(
     db: Session,
     company_id: int,
     ticket_id: int,
+    deleted_by: int | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ) -> bool:
     """
     Delete a ticket belonging to the company.
@@ -1343,7 +1728,25 @@ def delete_ticket(
     if not ticket:
         return False
 
+    old_values = _ticket_snapshot(ticket)
+    ticket_number = ticket.ticket_number
+
     db.delete(ticket)
+    db.flush()
+
+    _create_ticket_audit(
+        db,
+        ticket,
+        action="DELETE",
+        description=(
+            f"Deleted support ticket '{ticket_number}'"
+        ),
+        user_id=deleted_by,
+        old_values=old_values,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
     db.commit()
 
     return True

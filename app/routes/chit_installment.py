@@ -7,7 +7,7 @@ from fastapi import (
     status,
 )
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,7 @@ from app.services.chit_installment_service import (
 )
 
 from app.services.payment_transaction import get_chit_payment_details
+from app.services.audit_log_service import get_request_metadata
 
 router = APIRouter(
     prefix="/chits",
@@ -46,9 +47,12 @@ router = APIRouter(
 def generate_installments(
     chit_id: int,
     data: ChitInstallmentsGenerate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+
+    ip_address, user_agent = get_request_metadata(request)
 
     result = generate_installments_for_chit(
         db=db,
@@ -56,6 +60,9 @@ def generate_installments(
         chit_id=chit_id,
         start_date=data.start_date,
         installment_count=data.installment_count,
+        created_by=current_user.id,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
 
     if isinstance(result, dict):
@@ -131,8 +138,8 @@ def get_installments(
 
 # ==============================================================
 #  GET CHIT PAYMENT DETAILS
- # ===========================================================
- 
+# ===========================================================
+
 @router.get("/{chit_id}/payments")
 def get_chit_payments(
     chit_id: int,

@@ -1,7 +1,12 @@
 from datetime import datetime
+from decimal import Decimal
+from typing import Literal
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from pydantic import BaseModel, EmailStr, Field
 
+class CompanyStatusUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["active", "inactive"]
 
 class CompanyCreate(BaseModel):
 
@@ -26,7 +31,20 @@ class CompanyCreate(BaseModel):
     )
 
 
+class CompanyPlanSummary(BaseModel):
+    id: int
+    name: str
+    price: Decimal
+    billing_cycle: str
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+
 class CompanyResponse(BaseModel):
+
+    subscription_plan: CompanyPlanSummary | None = None
 
     id: int
 

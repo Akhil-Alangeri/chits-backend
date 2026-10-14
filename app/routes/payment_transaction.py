@@ -4,6 +4,7 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Request,
     status,
 )
 
@@ -28,6 +29,7 @@ from app.services.payment_transaction import (
     update_payment,
     get_customer_chit_payment_history
 )
+from app.services.audit_log_service import get_request_metadata
 
 
 router = APIRouter(
@@ -49,6 +51,7 @@ def create_payment(
     installment_id: int,
     payment_data:
         PaymentTransactionCreate,
+    request: Request,
 
     db: Session =
         Depends(get_db),
@@ -56,6 +59,8 @@ def create_payment(
     current_user: User =
         Depends(get_current_user),
 ):
+
+    ip_address, user_agent = get_request_metadata(request)
 
     result = create_payment_transaction(
 
@@ -72,6 +77,9 @@ def create_payment(
 
         created_by=
             current_user.id,
+
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
 
 
@@ -187,7 +195,7 @@ def get_payments(
 
 # =========================================================
 # UPDATE PAYMENT
-# =========================================================
+# ========================================================= 
 
 @router.put(
     "/payments/{payment_id}",
@@ -196,15 +204,21 @@ def get_payments(
 def update_payment_transaction(
     payment_id: int,
     payment_data: PaymentTransactionUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+
+    ip_address, user_agent = get_request_metadata(request)
 
     result = update_payment(
         db=db,
         company_id=current_user.company_id,
         payment_id=payment_id,
         payment_data=payment_data,
+        updated_by=current_user.id,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
 
 
@@ -255,14 +269,20 @@ def update_payment_transaction(
 )
 def delete_payment_transaction(
     payment_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+
+    ip_address, user_agent = get_request_metadata(request)
 
     result = delete_payment(
         db=db,
         company_id=current_user.company_id,
         payment_id=payment_id,
+        deleted_by=current_user.id,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
 
 

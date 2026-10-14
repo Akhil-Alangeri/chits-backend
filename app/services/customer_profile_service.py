@@ -7,6 +7,22 @@ from app.models.admin.chit_group import ChitGroup
 from app.models.admin.chit_member import ChitMember
 from app.models.admin.chit_installment import ChitInstallment
 from app.models.admin.payment_transaction import PaymentTransaction
+from app.services.audit_log_service import (
+    create_audit_log,
+    snapshot_model,
+)
+
+
+CUSTOMER_AUDIT_FIELDS = [
+    "id",
+    "customer_code",
+    "display_name",
+    "legal_name",
+    "mobile",
+    "email",
+    "address",
+    "status",
+]
 
 
 def generate_customer_code(
@@ -52,6 +68,9 @@ def create_customer_profile(
     db: Session,
     company_id: int,
     customer_data,
+    user_id: int | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ):
     # =====================================================
     # CHECK EXISTING CUSTOMER IN SAME COMPANY
@@ -133,6 +152,27 @@ def create_customer_profile(
 
     db.add(customer)
 
+    db.flush()
+
+    create_audit_log(
+        db=db,
+        company_id=company_id,
+        user_id=user_id,
+        action="CREATE",
+        module="Customers",
+        entity_type="CustomerProfile",
+        entity_id=customer.id,
+        description=(
+            f"Created customer '{customer.display_name}'"
+        ),
+        new_values=snapshot_model(
+            customer,
+            CUSTOMER_AUDIT_FIELDS,
+        ),
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
     db.commit()
 
     db.refresh(customer)
@@ -184,6 +224,9 @@ def update_customer_profile(
     company_id: int,
     customer_id: int,
     customer_data,
+    user_id: int | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ):
 
     customer = get_customer_profile(
@@ -194,6 +237,11 @@ def update_customer_profile(
 
     if not customer:
         return None
+
+    old_values = snapshot_model(
+        customer,
+        CUSTOMER_AUDIT_FIELDS,
+    )
 
     customer.display_name = (
         customer_data.display_name.strip()
@@ -217,6 +265,42 @@ def update_customer_profile(
 
     customer.status = (
         customer_data.status
+    )
+
+    db.flush()
+
+    new_values = snapshot_model(
+        customer,
+        CUSTOMER_AUDIT_FIELDS,
+    )
+
+    status_changed = (
+        old_values["status"] != new_values["status"]
+    )
+
+    create_audit_log(
+        db=db,
+        company_id=company_id,
+        user_id=user_id,
+        action=(
+            "STATUS_CHANGE"
+            if status_changed
+            else "UPDATE"
+        ),
+        module="Customers",
+        entity_type="CustomerProfile",
+        entity_id=customer.id,
+        description=(
+            f"Changed customer '{customer.display_name}' status "
+            f"from '{old_values['status']}' to "
+            f"'{new_values['status']}'"
+            if status_changed
+            else f"Updated customer '{customer.display_name}'"
+        ),
+        old_values=old_values,
+        new_values=new_values,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
 
     db.commit()

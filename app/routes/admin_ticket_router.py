@@ -2,7 +2,7 @@
 # ADMIN SUPPORT TICKET ROUTES
 # ============================================================
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -28,6 +28,7 @@ from app.services.support.ticket_service import (
     update_ticket_category,
     assign_ticket,
 )
+from app.services.audit_log_service import get_request_metadata
 
 
 # ============================================================
@@ -174,6 +175,7 @@ def get_ticket(
 def add_message(
     ticket_id: int,
     data: TicketMessageCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -196,6 +198,8 @@ def add_message(
             detail="User information not found.",
         )
 
+    ip_address, user_agent = get_request_metadata(request)
+
     try:
 
         message = create_admin_message(
@@ -204,6 +208,8 @@ def add_message(
             user_id=user_id,
             ticket_id=ticket_id,
             message=data.message,
+            ip_address=ip_address,
+            user_agent=user_agent,
         )
 
         return {
@@ -239,6 +245,7 @@ def add_message(
 def change_status(
     ticket_id: int,
     data: TicketStatusUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -250,6 +257,8 @@ def change_status(
             detail="Company information not found.",
         )
 
+    ip_address, user_agent = get_request_metadata(request)
+
     try:
 
         ticket = update_ticket_status(
@@ -257,6 +266,9 @@ def change_status(
             company_id=company_id,
             ticket_id=ticket_id,
             status=data.status,
+            updated_by=current_user.id,
+            ip_address=ip_address,
+            user_agent=user_agent,
         )
 
         return {
@@ -281,6 +293,7 @@ def change_status(
 def change_priority(
     ticket_id: int,
     data: TicketPriorityUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -292,6 +305,8 @@ def change_priority(
             detail="Company information not found.",
         )
 
+    ip_address, user_agent = get_request_metadata(request)
+
     try:
 
         ticket = update_ticket_priority(
@@ -299,6 +314,9 @@ def change_priority(
             company_id=company_id,
             ticket_id=ticket_id,
             priority=data.priority,
+            updated_by=current_user.id,
+            ip_address=ip_address,
+            user_agent=user_agent,
         )
 
         return {
@@ -323,6 +341,7 @@ def change_priority(
 def change_category(
     ticket_id: int,
     data: TicketCategoryUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -334,6 +353,8 @@ def change_category(
             detail="Company information not found.",
         )
 
+    ip_address, user_agent = get_request_metadata(request)
+
     try:
 
         ticket = update_ticket_category(
@@ -341,6 +362,9 @@ def change_category(
             company_id=company_id,
             ticket_id=ticket_id,
             category=data.category,
+            updated_by=current_user.id,
+            ip_address=ip_address,
+            user_agent=user_agent,
         )
 
         return {
@@ -365,6 +389,7 @@ def change_category(
 def assign_ticket_to_user(
     ticket_id: int,
     data: TicketAssignmentUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -376,6 +401,8 @@ def assign_ticket_to_user(
             detail="Company information not found.",
         )
 
+    ip_address, user_agent = get_request_metadata(request)
+
     try:
 
         ticket = assign_ticket(
@@ -383,6 +410,9 @@ def assign_ticket_to_user(
             company_id=company_id,
             ticket_id=ticket_id,
             assigned_to_user_id=data.assigned_to_user_id,
+            updated_by=current_user.id,
+            ip_address=ip_address,
+            user_agent=user_agent,
         )
 
         return {

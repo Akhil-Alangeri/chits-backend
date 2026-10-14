@@ -4,6 +4,7 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Request,
     status,
 )
 
@@ -29,6 +30,9 @@ from app.services.customer_profile_service import (
     get_customer_details
     
 )
+from app.services.audit_log_service import (
+    get_request_metadata,
+)
 
 
 router = APIRouter(
@@ -52,14 +56,20 @@ router = APIRouter(
 )
 def create_customer(
     customer_data: CustomerProfileCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+
+    ip_address, user_agent = get_request_metadata(request)
 
     result = create_customer_profile(
         db=db,
         company_id=current_user.company_id,
         customer_data=customer_data,
+        user_id=current_user.id,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
 
     # =====================================================
@@ -150,15 +160,21 @@ def get_customer(
 def update_customer(
     customer_id: int,
     customer_data: CustomerProfileUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+
+    ip_address, user_agent = get_request_metadata(request)
 
     customer = update_customer_profile(
         db,
         current_user.company_id,
         customer_id,
         customer_data,
+        current_user.id,
+        ip_address,
+        user_agent,
     )
 
     if not customer:

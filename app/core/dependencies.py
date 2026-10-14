@@ -34,7 +34,10 @@ def get_current_user(
 
     user_id = payload.get("sub")
 
-    if not user_id:
+    if payload.get("token_type") == "customer":
+        raise HTTPException(status_code=401, detail="Invalid company authentication token.")
+
+    if not user_id or not str(user_id).isdigit():
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication token.",
@@ -60,7 +63,16 @@ def get_current_user(
             detail="User account is not active.",
         )
 
+    if user.company_id is not None and (user.company is None or user.company.status != "active"):
+        raise HTTPException(status_code=403, detail="Company account is not active.")
     return user
+
+
+def require_company_admin(current_user=Depends(get_current_user)):
+    if current_user.role != "company_admin" or current_user.company_id is None:
+        raise HTTPException(status_code=403, detail="Company admin access required.")
+    return current_user
+
 
 
 # =========================================================

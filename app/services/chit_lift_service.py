@@ -6,9 +6,38 @@ from app.models.admin.chit_group import ChitGroup
 from app.models.admin.chit_member import ChitMember
 from app.models.admin.chit_months import ChitMonth
 from app.models.admin.chitlift import ChitLift
+from app.services.audit_log_service import create_audit_log, snapshot_model
 
 
 ACTIVE_MEMBER_STATUSES = ("confirmed", "active")
+
+CHIT_LIFT_AUDIT_FIELDS = [
+    "id",
+    "chit_id",
+    "chit_member_id",
+    "customer_name",
+    "member_number",
+    "slot_number",
+    "chit_month_id",
+    "cycle_number",
+    "lift_date",
+    "discount_amount",
+    "lifted_amount",
+    "payout_status",
+    "payout_date",
+    "cash_amount",
+    "upi_amount",
+    "notes",
+]
+
+
+def _chit_lift_audit_snapshot(
+    lift: ChitLift,
+) -> dict:
+    return snapshot_model(
+        lift,
+        CHIT_LIFT_AUDIT_FIELDS,
+    )
 
 
 # =========================================================
@@ -212,6 +241,9 @@ def create_chit_lift(
     chit_id: int,
     member_id: int,
     lift_data,
+    created_by: int | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ):
     # =====================================================
     # CHECK CHIT
@@ -399,6 +431,37 @@ def create_chit_lift(
     # =====================================================
 
     try:
+        db.flush()
+
+    except IntegrityError:
+        db.rollback()
+
+        return {
+            "error": "lift_conflict",
+            "message": (
+                "Another lift already exists for this "
+                "member slot or month."
+            ),
+        }
+
+    create_audit_log(
+        db=db,
+        company_id=company_id,
+        user_id=created_by,
+        action="CREATE",
+        module="Chit Lifts",
+        entity_type="ChitLift",
+        entity_id=lift.id,
+        description=(
+            f"Created chit lift for '{lift.customer_name}' "
+            f"in chit '{chit.name}'"
+        ),
+        new_values=_chit_lift_audit_snapshot(lift),
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
+    try:
         db.commit()
 
     except IntegrityError:
@@ -565,6 +628,9 @@ def update_chit_lift(
     chit_id: int,
     lift_id: int,
     lift_data,
+    updated_by: int | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ):
     # =====================================================
     # GET EXISTING LIFT
@@ -581,6 +647,8 @@ def update_chit_lift(
         return {
             "error": "lift_not_found",
         }
+
+    old_values = _chit_lift_audit_snapshot(lift)
 
     # =====================================================
     # EDIT REASON REQUIRED
@@ -866,6 +934,55 @@ def update_chit_lift(
     # =====================================================
     # COMMIT
     # =====================================================
+
+    try:
+        db.flush()
+
+    except IntegrityError:
+        db.rollback()
+
+        return {
+            "error": "lift_conflict",
+            "message": (
+                "Another lift already exists for this "
+                "member slot or month."
+            ),
+        }
+
+    new_values = _chit_lift_audit_snapshot(lift)
+
+    if old_values != new_values:
+        payout_status_changed = (
+            old_values["payout_status"]
+            != new_values["payout_status"]
+        )
+        new_values["edit_reason"] = edit_reason
+
+        create_audit_log(
+            db=db,
+            company_id=company_id,
+            user_id=updated_by,
+            action=(
+                "STATUS_CHANGE"
+                if payout_status_changed
+                else "UPDATE"
+            ),
+            module="Chit Lifts",
+            entity_type="ChitLift",
+            entity_id=lift.id,
+            description=(
+                f"Changed chit lift {lift.id} payout status "
+                f"from '{old_values['payout_status']}' "
+                f"to '{new_values['payout_status']}': "
+                f"{edit_reason}"
+                if payout_status_changed
+                else f"Updated chit lift {lift.id}: {edit_reason}"
+            ),
+            old_values=old_values,
+            new_values=new_values,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
 
     try:
         db.commit()

@@ -1,12 +1,56 @@
 
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
+from fastapi import HTTPException
+
+
+def change_company_status(db, company_id, new_status, ip_address=None, user_agent=None):
+    company = db.query(Company).filter(Company.id == company_id).with_for_update().first()
+    if company is None:
+        raise HTTPException(404, "Company not found.")
+    if company.status not in {"active", "inactive"}:
+        raise HTTPException(409, "Only approved active/inactive companies can be changed here. Use the company approval flow for pending registrations.")
+    if company.status == new_status:
+        return company
+    old_status = company.status
+    company.status = new_status
+    create_audit_log(db, company_id=company.id, user_id=None, action="STATUS_CHANGE",
+        module="Companies", entity_type="Company", entity_id=company.id,
+        description=f"Changed company status from '{old_status}' to '{new_status}'",
+        old_values={"status": old_status}, new_values={"status": new_status},
+        ip_address=ip_address, user_agent=user_agent)
+    db.commit()
+    db.refresh(company)
+    return company
 from app.models.admin.company import Company
 from app.models.admin.user import User
 from app.schemas.company import CompanyCreate
 from app.core.security import hash_password
 from pathlib import Path
 from uuid import uuid4
+from app.services.audit_log_service import (
+    create_audit_log,
+    snapshot_model,
+)
+
+
+COMPANY_AUDIT_FIELDS = [
+    "id",
+    "company_name",
+    "email",
+    "mobile",
+    "address",
+    "logo_url",
+    "status",
+]
+
+USER_AUDIT_FIELDS = [
+    "id",
+    "company_id",
+    "login_id",
+    "role",
+    "status",
+]
 
 
 def create_company(
@@ -16,6 +60,8 @@ def create_company(
     email: str,
     address: str,
     logo: UploadFile | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ):
     # ==========================================
     # CHECK MOBILE NUMBER EXISTS
@@ -128,6 +174,28 @@ def create_company(
     )
 
     db.add(company)
+
+    db.flush()
+
+    create_audit_log(
+        db=db,
+        company_id=company.id,
+        user_id=None,
+        action="CREATE",
+        module="Companies",
+        entity_type="Company",
+        entity_id=company.id,
+        description=(
+            f"Registered company '{company.company_name}'"
+        ),
+        new_values=snapshot_model(
+            company,
+            COMPANY_AUDIT_FIELDS,
+        ),
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
     db.commit()
     db.refresh(company)
 
@@ -254,7 +322,9 @@ def generate_company_login_id(
 
 def approve_company(
     db: Session,
-    company_id: int
+    company_id: int,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ):
     company = (
         db.query(Company)
@@ -277,6 +347,11 @@ def approve_company(
         return {
             "error": "already_processed"
         }
+
+    old_company_values = snapshot_model(
+        company,
+        COMPANY_AUDIT_FIELDS,
+    )
 
 
     # =====================================
@@ -329,6 +404,53 @@ def approve_company(
     # =====================================
 
     company.status = "active"
+
+    db.flush()
+
+    create_audit_log(
+        db=db,
+        company_id=company.id,
+        user_id=None,
+        action="CREATE",
+        module="Users",
+        entity_type="User",
+        entity_id=user.id,
+        description=(
+            f"Created company admin '{user.login_id}' "
+            f"for company '{company.company_name}'"
+        ),
+        new_values=snapshot_model(
+            user,
+            USER_AUDIT_FIELDS,
+        ),
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
+    new_company_values = snapshot_model(
+        company,
+        COMPANY_AUDIT_FIELDS,
+    )
+
+    create_audit_log(
+        db=db,
+        company_id=company.id,
+        user_id=None,
+        action="STATUS_CHANGE",
+        module="Companies",
+        entity_type="Company",
+        entity_id=company.id,
+        description=(
+            f"Changed company '{company.company_name}' status "
+            f"from '{old_company_values['status']}' to "
+            f"'{new_company_values['status']}'"
+        ),
+        old_values=old_company_values,
+        new_values=new_company_values,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
     # =====================================
     # SAVE DATABASE
     # =====================================
@@ -344,7 +466,4 @@ def approve_company(
         "company": company,
         "login_id": login_id,
         "password": plain_password
-    } 
-    
-    
-    
+    }

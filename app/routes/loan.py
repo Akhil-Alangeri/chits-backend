@@ -1,4 +1,4 @@
-from fastapi import (APIRouter,Depends,HTTPException,status,)
+from fastapi import (APIRouter,Depends,HTTPException,Request,status,)
 
 from datetime import datetime
 
@@ -46,9 +46,13 @@ from app.services.loan_services import (
     get_loans,
     update_loan,
 )
+from app.services.audit_log_service import get_request_metadata
 
+
+from app.services.entitlement_service import require_company_feature
 
 router = APIRouter(
+    dependencies=[Depends(require_company_feature("loans"))],
     prefix="/loans",
     tags=["Loans"],
 )
@@ -65,6 +69,7 @@ router = APIRouter(
 )
 def create_loan_route(
     data: LoanCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -74,11 +79,15 @@ def create_loan_route(
             detail="User is not associated with a company.",
         )
 
+    ip_address, user_agent = get_request_metadata(request)
+
     return create_loan(
         db=db,
         company_id=current_user.company_id,
         created_by=current_user.id,
         loan_data=data,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
 
 
@@ -196,6 +205,7 @@ def get_loan_transactions_route(
 def create_loan_transaction_route(
     loan_id: int,
     data: LoanTransactionCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -205,12 +215,16 @@ def create_loan_transaction_route(
             detail="User is not associated with a company.",
         )
 
+    ip_address, user_agent = get_request_metadata(request)
+
     result = create_loan_transaction(
         db=db,
         company_id=current_user.company_id,
         loan_id=loan_id,
         created_by=current_user.id,
         transaction_data=data,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
 
     if isinstance(result, dict):
@@ -301,6 +315,7 @@ def get_loan_route(
 def update_loan_route(
     loan_id: int,
     data: LoanUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -310,11 +325,16 @@ def update_loan_route(
             detail="User is not associated with a company.",
         )
 
+    ip_address, user_agent = get_request_metadata(request)
+
     result = update_loan(
         db=db,
         company_id=current_user.company_id,
         loan_id=loan_id,
         loan_data=data,
+        updated_by=current_user.id,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
 
     if isinstance(result, dict):
@@ -351,6 +371,7 @@ def update_loan_route(
 )
 def cancel_loan_route(
     loan_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -360,10 +381,15 @@ def cancel_loan_route(
             detail="User is not associated with a company.",
         )
 
+    ip_address, user_agent = get_request_metadata(request)
+
     result = cancel_loan(
         db=db,
         company_id=current_user.company_id,
         loan_id=loan_id,
+        cancelled_by=current_user.id,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
 
     if isinstance(result, dict):

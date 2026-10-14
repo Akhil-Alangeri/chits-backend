@@ -12,6 +12,22 @@ from app.core.security import (
     hash_password,
 )
 
+from app.services.audit_log_service import (
+    create_audit_log,
+    snapshot_model,
+)
+
+
+COMPANY_PROFILE_AUDIT_FIELDS = [
+    "id",
+    "company_name",
+    "email",
+    "mobile",
+    "address",
+    "logo_url",
+    "status",
+]
+
 
 # =========================================================
 # GET COMPANY PROFILE
@@ -59,6 +75,8 @@ async def update_company_profile(
     mobile: str,
     address: str,
     logo: UploadFile | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ):
 
     company = (
@@ -73,6 +91,11 @@ async def update_company_profile(
         return {
             "error": "company_not_found"
         }
+
+    old_values = snapshot_model(
+        company,
+        COMPANY_PROFILE_AUDIT_FIELDS,
+    )
 
     # =========================================
     # COMPANY NAME
@@ -192,6 +215,29 @@ async def update_company_profile(
     # SAVE DATABASE
     # =========================================
 
+    db.flush()
+
+    create_audit_log(
+        db=db,
+        company_id=company.id,
+        user_id=user.id,
+        action="UPDATE",
+        module="Company Profile",
+        entity_type="Company",
+        entity_id=company.id,
+        description=(
+            f"Updated company profile for "
+            f"'{company.company_name}'"
+        ),
+        old_values=old_values,
+        new_values=snapshot_model(
+            company,
+            COMPANY_PROFILE_AUDIT_FIELDS,
+        ),
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
     db.commit()
 
     db.refresh(company)
@@ -217,7 +263,9 @@ async def update_company_profile(
 def update_login_id(
     db: Session,
     user: User,
-    new_login_id: str
+    new_login_id: str,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ):
 
     new_login_id = new_login_id.strip()
@@ -253,12 +301,37 @@ def update_login_id(
             "error": "login_id_already_exists"
         }
 
+    old_values = {
+        "login_id": user.login_id,
+    }
+
 
     # -----------------------------------------
     # UPDATE
     # -----------------------------------------
 
     user.login_id = new_login_id
+
+    db.flush()
+
+    if user.company_id is not None:
+
+        create_audit_log(
+            db=db,
+            company_id=user.company_id,
+            user_id=user.id,
+            action="UPDATE",
+            module="Company Profile",
+            entity_type="User",
+            entity_id=user.id,
+            description="Updated company login ID",
+            old_values=old_values,
+            new_values={
+                "login_id": user.login_id,
+            },
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
 
     db.commit()
 
@@ -279,7 +352,9 @@ def update_password(
     user: User,
     current_password: str,
     new_password: str,
-    confirm_password: str
+    confirm_password: str,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ):
 
     # -----------------------------------------
@@ -328,6 +403,29 @@ def update_password(
     user.password_hash = hash_password(
         new_password
     )
+
+    db.flush()
+
+    if user.company_id is not None:
+
+        create_audit_log(
+            db=db,
+            company_id=user.company_id,
+            user_id=user.id,
+            action="UPDATE",
+            module="Company Profile",
+            entity_type="User",
+            entity_id=user.id,
+            description="Changed company account password",
+            old_values={
+                "password_changed": False,
+            },
+            new_values={
+                "password_changed": True,
+            },
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
 
 
     db.commit()

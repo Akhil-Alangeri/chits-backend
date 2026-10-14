@@ -16,6 +16,8 @@ class User(Base):
 
     __tablename__ = "users"
 
+    full_name = Column(String(150), nullable=True)
+
     id = Column(
         BigInteger,
         primary_key=True,

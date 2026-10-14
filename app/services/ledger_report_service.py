@@ -1,3 +1,4 @@
+from app.services.entitlement_service import has_company_feature
 from datetime import date
 from decimal import Decimal
 from math import ceil
@@ -339,7 +340,7 @@ def _build_ledger_rows(
     # 2. LOAN TRANSACTIONS
     # =====================================================
 
-    if transaction_type in {
+    if has_company_feature(db, company_id, "loans") and transaction_type in {
         "all",
         "loan_taken",
         "loan_given",
@@ -582,7 +583,7 @@ def _build_ledger_rows(
     # 3. EXPENSES
     # =====================================================
 
-    if transaction_type in {
+    if has_company_feature(db, company_id, "expenses") and transaction_type in {
         "all",
         "expense",
     }:

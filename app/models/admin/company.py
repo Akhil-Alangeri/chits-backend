@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Column, DateTime, String,Enum
+from sqlalchemy import BigInteger, Column, DateTime, String,Enum, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -8,6 +8,9 @@ from app.core.database import Base
 class Company(Base):
 
     __tablename__ = "companies"
+
+    subscription_plan_id = Column(BigInteger, ForeignKey("subscription_plans.id"), nullable=True, index=True)
+    subscription_plan = relationship("SubscriptionPlan")
 
     id = Column(
         BigInteger,

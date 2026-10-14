@@ -1,5 +1,5 @@
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -13,8 +13,12 @@ from app.services.expenses_service import (
     get_expenses,
     update_expense,
 )
+from app.services.audit_log_service import get_request_metadata
+
+from app.services.entitlement_service import require_company_feature
 
 router = APIRouter(
+    dependencies=[Depends(require_company_feature("expenses"))],
     prefix="/expenses",
     tags=["Expenses"],
 )
@@ -27,13 +31,18 @@ router = APIRouter(
 )
 def create(
     payload: ExpenseCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    ip_address, user_agent = get_request_metadata(request)
+
     return create_expense(
         db=db,
         payload=payload,
         current_user=current_user,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
 
 
@@ -74,14 +83,19 @@ def get_by_id(
 def update(
     expense_id: int,
     payload: ExpenseUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    ip_address, user_agent = get_request_metadata(request)
+
     return update_expense(
         db=db,
         expense_id=expense_id,
         payload=payload,
         current_user=current_user,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
     
     
@@ -93,13 +107,18 @@ def update(
 )
 def delete(
     expense_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    ip_address, user_agent = get_request_metadata(request)
+
     return delete_expense(
         db=db,
         expense_id=expense_id,
         current_user=current_user,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
     
     

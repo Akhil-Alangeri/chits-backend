@@ -42,7 +42,10 @@ from app.services.loan_reports_service import (
 )
 
 
+from app.services.entitlement_service import require_company_feature
+
 router = APIRouter(
+    dependencies=[Depends(require_company_feature("loans"))],
     prefix="/reports",
     tags=["Reports"],
 )

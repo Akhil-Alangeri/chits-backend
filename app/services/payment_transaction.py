@@ -10,6 +10,37 @@ from app.models.admin.chit_installment import ChitInstallment
 from app.models.admin.chit_member import ChitMember
 from app.models.admin.payment_transaction import PaymentTransaction
 from app.models.admin.customer_profile import CustomerProfile
+from app.services.audit_log_service import create_audit_log, snapshot_model
+
+
+PAYMENT_AUDIT_FIELDS = [
+    "id",
+    "installment_id",
+    "amount",
+    "payment_date",
+    "payment_method",
+    "reference_number",
+    "notes",
+    "created_by",
+]
+
+
+def _payment_audit_snapshot(
+    payment: PaymentTransaction,
+    installment: ChitInstallment,
+) -> dict:
+    values = snapshot_model(
+        payment,
+        PAYMENT_AUDIT_FIELDS,
+    )
+    values.update({
+        "chit_member_id": installment.chit_member_id,
+        "installment_number": installment.installment_number,
+        "installment_due_amount": installment.due_amount,
+        "installment_status": installment.status,
+    })
+
+    return values
 
 
 # =========================================================
@@ -160,9 +191,6 @@ def validate_payment_sequence(
     }
 
 
-# =========================================================
-# CREATE PAYMENT
-# =========================================================
 
 # =========================================================
 # CREATE PAYMENT
@@ -174,6 +202,8 @@ def create_payment_transaction(
     installment_id: int,
     payment_data,
     created_by: int,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ):
 
     # =====================================================
@@ -332,6 +362,28 @@ def create_payment_transaction(
     # =====================================================
     # SAVE
     # =====================================================
+
+    db.flush()
+
+    create_audit_log(
+        db=db,
+        company_id=company_id,
+        user_id=created_by,
+        action="CREATE",
+        module="Payments",
+        entity_type="PaymentTransaction",
+        entity_id=payment.id,
+        description=(
+            f"Recorded payment {payment.id} for installment "
+            f"{installment.installment_number}"
+        ),
+        new_values=_payment_audit_snapshot(
+            payment,
+            installment,
+        ),
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
 
     db.commit()
 
@@ -528,6 +580,9 @@ def update_payment(
     company_id: int,
     payment_id: int,
     payment_data,
+    updated_by: int | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ):
 
     # =====================================================
@@ -557,10 +612,9 @@ def update_payment(
         )
         .first()
     )
-
-
+    
+    
     if not payment:
-
         return {
             "error": "payment_not_found"
         }
@@ -579,12 +633,16 @@ def update_payment(
         .first()
     )
 
-
     if not installment:
 
         return {
             "error": "installment_not_found"
         }
+
+    old_values = _payment_audit_snapshot(
+        payment,
+        installment,
+    )
 
 
     # =====================================================
@@ -718,6 +776,29 @@ def update_payment(
     # SAVE
     # =====================================================
 
+    db.flush()
+
+    new_values = _payment_audit_snapshot(
+        payment,
+        installment,
+    )
+
+    if old_values != new_values:
+        create_audit_log(
+            db=db,
+            company_id=company_id,
+            user_id=updated_by,
+            action="UPDATE",
+            module="Payments",
+            entity_type="PaymentTransaction",
+            entity_id=payment.id,
+            description=f"Updated payment {payment.id}",
+            old_values=old_values,
+            new_values=new_values,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+
     db.commit()
 
 
@@ -738,6 +819,9 @@ def delete_payment(
     db: Session,
     company_id: int,
     payment_id: int,
+    deleted_by: int | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ):
 
     # =====================================================
@@ -796,6 +880,11 @@ def delete_payment(
             "error": "installment_not_found"
         }
 
+    old_values = _payment_audit_snapshot(
+        payment,
+        installment,
+    )
+
 
     # =====================================================
     # DELETE PAYMENT
@@ -829,6 +918,20 @@ def delete_payment(
     # =====================================================
     # SAVE
     # =====================================================
+
+    create_audit_log(
+        db=db,
+        company_id=company_id,
+        user_id=deleted_by,
+        action="DELETE",
+        module="Payments",
+        entity_type="PaymentTransaction",
+        entity_id=payment_id,
+        description=f"Deleted payment {payment_id}",
+        old_values=old_values,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
 
     db.commit()
 
@@ -1571,10 +1674,8 @@ def get_customer_chit_payment_history(
 
             "due_amount":
                 due_amount,
-
-            "paid_amount":
-                installment_paid,
-
+            "payment_amount": int(payment.amount or 0),
+            "paid_amount": installment_paid,
             "remaining_amount":
                 remaining,
 

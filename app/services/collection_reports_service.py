@@ -53,7 +53,7 @@ def _get_collected_by_name(
         return None
 
     # Import locally to avoid unnecessary model import coupling.
-    from app.models.user import User
+    from app.models.admin.user import User
 
     user = (
         db.query(User)

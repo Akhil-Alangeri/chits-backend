@@ -40,6 +40,9 @@ def company_login(
         login_data.password
     )
 
+    if result.get("error") in {"user_not_active", "company_not_found"}:
+        raise HTTPException(status_code=403, detail="User account is not active or has no company.")
+
     # Invalid credentials
     if result.get("error") == "invalid_credentials":
         raise HTTPException(

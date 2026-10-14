@@ -106,6 +106,9 @@ class PaymentHistoryItem(BaseModel):
 
     due_amount: int
 
+    # Actual amount of this individual transaction
+    payment_amount: int
+
     paid_amount: int
 
     remaining_amount: int
@@ -121,8 +124,6 @@ class PaymentHistoryItem(BaseModel):
     created_by: int | None
 
     created_at: datetime | None
-
-
 # =========================================================
 # PAYMENT HISTORY RESPONSE
 # =========================================================

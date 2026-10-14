@@ -10,6 +10,7 @@ from app.core.database import Base
 # Import models so Alembic can detect them
 # Import all models so Alembic can detect them
 import app.models
+from app.services.customer.msg91_auth.msg91_cooldown import Msg91LoginState
 
 
 # Load .env

@@ -7,6 +7,10 @@ from sqlalchemy.orm import Session
 
 from app.models.admin.loan import Loan
 from app.models.admin.loan_transaction import LoanTransaction
+from app.services.audit_log_service import (
+    create_audit_log,
+    snapshot_model,
+)
 
 
 # =========================================================
@@ -18,6 +22,49 @@ ONE = Decimal("1")
 ONE_HUNDRED = Decimal("100")
 THIRTY_POINT_FOUR_FOUR = Decimal("30.44")
 TWO_DECIMAL = Decimal("0.01")
+
+
+LOAN_AUDIT_FIELDS = [
+    "id",
+    "person_name",
+    "person_mobile",
+    "direction",
+    "principal_amount",
+    "interest_rate",
+    "interest_type",
+    "start_date",
+    "due_date",
+    "status",
+]
+
+LOAN_TRANSACTION_AUDIT_FIELDS = [
+    "id",
+    "loan_id",
+    "transaction_date",
+    "transaction_type",
+    "principal_amount",
+    "interest_amount",
+    "discount",
+    "upi_amount",
+    "cash_amount",
+    "reference",
+]
+
+
+def _loan_snapshot(loan: Loan) -> dict:
+    return snapshot_model(
+        loan,
+        LOAN_AUDIT_FIELDS,
+    )
+
+
+def _loan_transaction_snapshot(
+    transaction: LoanTransaction,
+) -> dict:
+    return snapshot_model(
+        transaction,
+        LOAN_TRANSACTION_AUDIT_FIELDS,
+    )
 
 
 # =========================================================
@@ -797,6 +844,8 @@ def create_loan(
     company_id: int,
     created_by: int | None,
     loan_data,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ):
     """
     Create a new company-scoped loan.
@@ -884,6 +933,24 @@ def create_loan(
     )
 
     db.add(loan)
+    db.flush()
+
+    create_audit_log(
+        db=db,
+        company_id=company_id,
+        user_id=created_by,
+        action="CREATE",
+        module="Loans",
+        entity_type="Loan",
+        entity_id=loan.id,
+        description=(
+            f"Created loan #{loan.id} for "
+            f"'{loan.person_name}'"
+        ),
+        new_values=_loan_snapshot(loan),
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
 
     db.commit()
 
@@ -942,6 +1009,9 @@ def update_loan(
     company_id: int,
     loan_id: int,
     loan_data,
+    updated_by: int | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ):
     """
     Update a company-scoped loan.
@@ -957,6 +1027,8 @@ def update_loan(
         return {
             "error": "loan_not_found",
         }
+
+    old_values = _loan_snapshot(loan)
 
     update_data = loan_data.model_dump(
         exclude_unset=True,
@@ -1067,6 +1139,39 @@ def update_loan(
             value,
         )
 
+    db.flush()
+
+    new_values = _loan_snapshot(loan)
+    status_changed = (
+        old_values["status"]
+        != new_values["status"]
+    )
+
+    create_audit_log(
+        db=db,
+        company_id=company_id,
+        user_id=updated_by,
+        action=(
+            "STATUS_CHANGE"
+            if status_changed
+            else "UPDATE"
+        ),
+        module="Loans",
+        entity_type="Loan",
+        entity_id=loan.id,
+        description=(
+            f"Changed loan #{loan.id} status from "
+            f"'{old_values['status']}' to "
+            f"'{new_values['status']}'"
+            if status_changed
+            else f"Updated loan #{loan.id}"
+        ),
+        old_values=old_values,
+        new_values=new_values,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
     db.commit()
 
     db.refresh(loan)
@@ -1082,6 +1187,9 @@ def cancel_loan(
     db: Session,
     company_id: int,
     loan_id: int,
+    cancelled_by: int | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ):
     """
     Cancel a loan.
@@ -1114,7 +1222,31 @@ def cancel_loan(
             ),
         }
 
+    old_values = _loan_snapshot(loan)
+
     loan.status = "cancelled"
+
+    db.flush()
+
+    new_values = _loan_snapshot(loan)
+
+    create_audit_log(
+        db=db,
+        company_id=company_id,
+        user_id=cancelled_by,
+        action="STATUS_CHANGE",
+        module="Loans",
+        entity_type="Loan",
+        entity_id=loan.id,
+        description=(
+            f"Cancelled loan #{loan.id} for "
+            f"'{loan.person_name}'"
+        ),
+        old_values=old_values,
+        new_values=new_values,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
 
     db.commit()
 
@@ -1133,6 +1265,8 @@ def create_loan_transaction(
     loan_id: int,
     created_by: int | None,
     transaction_data,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ):
     """
     Create a loan transaction.
@@ -1171,6 +1305,8 @@ def create_loan_transaction(
                 "to a cancelled loan."
             ),
         }
+
+    old_loan_values = _loan_snapshot(loan)
 
     # =====================================================
     # BASIC DATA
@@ -1635,6 +1771,47 @@ def create_loan_transaction(
 
     else:
         loan.status = "active"
+
+    db.flush()
+
+    create_audit_log(
+        db=db,
+        company_id=company_id,
+        user_id=created_by,
+        action="CREATE",
+        module="Loan Transactions",
+        entity_type="LoanTransaction",
+        entity_id=transaction.id,
+        description=(
+            f"Created {transaction.transaction_type} "
+            f"transaction #{transaction.id} for loan #{loan.id}"
+        ),
+        new_values=_loan_transaction_snapshot(transaction),
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
+    new_loan_values = _loan_snapshot(loan)
+
+    if old_loan_values["status"] != new_loan_values["status"]:
+        create_audit_log(
+            db=db,
+            company_id=company_id,
+            user_id=created_by,
+            action="STATUS_CHANGE",
+            module="Loans",
+            entity_type="Loan",
+            entity_id=loan.id,
+            description=(
+                f"Changed loan #{loan.id} status from "
+                f"'{old_loan_values['status']}' to "
+                f"'{new_loan_values['status']}'"
+            ),
+            old_values=old_loan_values,
+            new_values=new_loan_values,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
 
     db.commit()
 

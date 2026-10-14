@@ -8,6 +8,31 @@ from app.models.admin.chit_member import ChitMember
 from app.services.chit_installment_service import (
     generate_installments_for_member,
 )   
+from app.services.audit_log_service import create_audit_log, snapshot_model
+
+
+CHIT_MEMBER_AUDIT_FIELDS = [
+    "id",
+    "chit_id",
+    "customer_profile_id",
+    "member_number",
+    "slot_number",
+    "member_name",
+    "status",
+    "confirmed_at",
+    "cancelled_at",
+    "cancel_reason",
+    "notes",
+]
+
+
+def _chit_member_audit_snapshot(
+    member: ChitMember,
+) -> dict:
+    return snapshot_model(
+        member,
+        CHIT_MEMBER_AUDIT_FIELDS,
+    )
 
 
 # =========================================================
@@ -67,6 +92,9 @@ def add_chit_member(
     company_id: int,
     chit_id: int,
     member_data,
+    created_by: int | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ):
 
     # =====================================================
@@ -219,6 +247,25 @@ def add_chit_member(
     # COMMIT EVERYTHING
     # =====================================================
 
+    db.flush()
+
+    create_audit_log(
+        db=db,
+        company_id=company_id,
+        user_id=created_by,
+        action="CREATE",
+        module="Chit Members",
+        entity_type="ChitMember",
+        entity_id=member.id,
+        description=(
+            f"Added chit member '{member.member_name}' "
+            f"to chit '{chit.name}'"
+        ),
+        new_values=_chit_member_audit_snapshot(member),
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
     db.commit()
 
     db.refresh(member)
@@ -285,6 +332,9 @@ def update_chit_member(
     company_id: int,
     member_id: int,
     member_data,
+    updated_by: int | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ):
 
     member = get_chit_member(
@@ -295,6 +345,8 @@ def update_chit_member(
 
     if not member:
         return None
+
+    old_values = _chit_member_audit_snapshot(member)
 
     # -----------------------------------------------------
     # NAME
@@ -342,6 +394,41 @@ def update_chit_member(
             member.cancelled_at = None
 
             member.cancel_reason = None
+
+    db.flush()
+
+    new_values = _chit_member_audit_snapshot(member)
+
+    if old_values != new_values:
+        status_changed = (
+            old_values["status"]
+            != new_values["status"]
+        )
+
+        create_audit_log(
+            db=db,
+            company_id=company_id,
+            user_id=updated_by,
+            action=(
+                "STATUS_CHANGE"
+                if status_changed
+                else "UPDATE"
+            ),
+            module="Chit Members",
+            entity_type="ChitMember",
+            entity_id=member.id,
+            description=(
+                f"Changed chit member '{member.member_name}' "
+                f"status from '{old_values['status']}' "
+                f"to '{new_values['status']}'"
+                if status_changed
+                else f"Updated chit member '{member.member_name}'"
+            ),
+            old_values=old_values,
+            new_values=new_values,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
 
     db.commit()
 
@@ -391,6 +478,9 @@ def remove_chit_member(
     company_id: int,
     chit_id: int,
     member_id: int,
+    removed_by: int | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ):
 
     # =====================================================
@@ -440,6 +530,8 @@ def remove_chit_member(
     # REMOVE MEMBERSHIP
     # =====================================================
 
+    old_values = _chit_member_audit_snapshot(member)
+
     member.status = "cancelled"
 
     member.cancelled_at = datetime.utcnow()
@@ -450,6 +542,26 @@ def remove_chit_member(
     # =====================================================
     # COMMIT
     # =====================================================
+
+    db.flush()
+
+    create_audit_log(
+        db=db,
+        company_id=company_id,
+        user_id=removed_by,
+        action="STATUS_CHANGE",
+        module="Chit Members",
+        entity_type="ChitMember",
+        entity_id=member.id,
+        description=(
+            f"Removed chit member '{member.member_name}' "
+            f"from chit ID {chit_id}"
+        ),
+        old_values=old_values,
+        new_values=_chit_member_audit_snapshot(member),
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
 
     db.commit()
 

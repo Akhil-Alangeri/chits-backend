@@ -9,6 +9,7 @@ from app.models.admin.payment_transaction import PaymentTransaction
 from app.models.admin.chit_group import ChitGroup
 from app.models.admin.chit_member import ChitMember
 from app.models.admin.chit_installment import ChitInstallment
+from app.services.audit_log_service import create_audit_log
 
 
 # =========================================================
@@ -56,6 +57,9 @@ def generate_installments_for_chit(
     chit_id: int,
     start_date: date,
     installment_count: int,
+    created_by: int | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ):
 
     # =====================================================
@@ -196,6 +200,33 @@ def generate_installments_for_chit(
     #
     # This manual/testing function owns its transaction.
     # =====================================================
+
+    db.flush()
+
+    create_audit_log(
+        db=db,
+        company_id=company_id,
+        user_id=created_by,
+        action="CREATE",
+        module="Chit Installments",
+        entity_type="ChitGroup",
+        entity_id=chit.id,
+        description=(
+            f"Generated {len(created_installments)} installments "
+            f"for chit group '{chit.name}'"
+        ),
+        new_values={
+            "chit_id": chit.id,
+            "chit_code": chit.code,
+            "start_date": start_date,
+            "installment_count": installment_count,
+            "member_count": len(members),
+            "created_installment_count": len(created_installments),
+            "monthly_emi": chit.monthly_emi,
+        },
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
 
     db.commit()
 
