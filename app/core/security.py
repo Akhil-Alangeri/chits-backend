@@ -1,18 +1,28 @@
+import os
 import bcrypt
 
 from datetime import datetime, timedelta, timezone
-from jose import jwt,JWTError
+from jose import jwt, JWTError
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 # =========================================================
 # JWT CONFIG
 # =========================================================
 
-SECRET_KEY = "CHANGE_THIS_TO_A_LONG_RANDOM_SECRET"
+SECRET_KEY = os.getenv("SECRET_KEY")
 
-ALGORITHM = "HS256"
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY environment variable is not set")
 
-ACCESS_TOKEN_EXPIRE_MINUTES = 5 * 60
+ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+
+ACCESS_TOKEN_EXPIRE_MINUTES = int(
+    os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "300")
+)
+
 
 
 # =========================================================
@@ -55,24 +65,45 @@ def create_access_token(
     expires_minutes: int = ACCESS_TOKEN_EXPIRE_MINUTES
 ) -> str:
 
+    # Current UTC time
+    now = datetime.now(timezone.utc)
+
+    # Copy the data provided by the caller
     payload = data.copy()
 
-    expire = (
-        datetime.now(timezone.utc)
-        + timedelta(minutes=expires_minutes)
+    # Calculate expiry time
+    expire = now + timedelta(
+        minutes=expires_minutes
     )
 
+    # =====================================================
+    # JWT CLAIMS
+    # =====================================================
+
     payload.update({
-        "exp": expire
+
+        # Token issued time
+        "iat": now,
+
+        # Token expiry time
+        "exp": expire,
+
     })
+
+    # =====================================================
+    # CREATE JWT
+    # =====================================================
 
     return jwt.encode(
         payload,
         SECRET_KEY,
         algorithm=ALGORITHM
     )
-    
-# DECODE 
+
+
+# =========================================================
+# DECODE ACCESS TOKEN
+# =========================================================
 
 def decode_access_token(token: str):
 
