@@ -25,7 +25,7 @@ router = APIRouter(
 
 
 @router.post(
-    "/",
+    "",
     response_model=ExpenseResponse,
     status_code=status.HTTP_201_CREATED,
 )
@@ -47,7 +47,7 @@ def create(
 
 
 @router.get(
-    "/",
+    "",
     response_model=list[ExpenseResponse],
 )
 def get_all(
@@ -122,7 +122,3 @@ def delete(
     )
     
     
-    
-    
-    
-
