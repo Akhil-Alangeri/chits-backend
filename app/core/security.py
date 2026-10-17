@@ -1,23 +1,28 @@
-import bcrypt
 import os
-from dotenv import load_dotenv
-load_dotenv()
+import bcrypt
 
 from datetime import datetime, timedelta, timezone
-
 from jose import jwt, JWTError
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 # =========================================================
 # JWT CONFIG
 # =========================================================
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "CHANGE_THIS_TO_A_LONG_RANDOM_SECRET")
+SECRET_KEY = os.getenv("SECRET_KEY")
 
-ALGORITHM = "HS256"
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY environment variable is not set")
 
-# 5 * 60 = 300 minutes = 5 HOURS
-ACCESS_TOKEN_EXPIRE_MINUTES = 5 * 60
+ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+
+ACCESS_TOKEN_EXPIRE_MINUTES = int(
+    os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "300")
+)
+
 
 
 # =========================================================
