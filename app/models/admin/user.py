@@ -1,5 +1,6 @@
 from sqlalchemy import (
     BigInteger,
+    Integer,
     Column,
     ForeignKey,
     String,
@@ -67,6 +68,14 @@ class User(Base):
         DateTime,
         nullable=True
     )
+
+    session_version = Column(Integer, nullable=False, default=0, server_default="0")
+    failed_attempts = Column(Integer, nullable=False, default=0, server_default="0")
+    locked_until = Column(DateTime, nullable=True)
+    reset_hash = Column(String(64), nullable=True)
+    reset_expires = Column(DateTime, nullable=True)
+    reset_sent_at = Column(DateTime, nullable=True)
+    reset_attempts = Column(Integer, nullable=False, default=0, server_default="0")
 
     # Company relationship
 

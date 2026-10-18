@@ -22,6 +22,7 @@ from app.services.entitlement_service import get_company_effective_features
 from app.services.ledger_report_service import _build_ledger_rows
 from app.services.dashboard_service import get_loan_summary, get_expense_summary
 from app.services.audit_log_service import get_audit_history
+from app.routes.super_admin_auth import require_super_admin
 
 @compiles(BigInteger, "sqlite")
 def sqlite_bigint(element, compiler, **kw):
@@ -44,10 +45,18 @@ class EntitlementTests(unittest.TestCase):
         self.app=FastAPI()
         self.module_routers=[loan_router,expenses_router,loan_reports_router,expense_reports_router]
         for r in [router,company_router,auth_router,companies_router,*self.module_routers]: self.app.include_router(r)
-        self.app.dependency_overrides[get_db]=lambda:self.db
-        self.client=TestClient(self.app)
+        
+        # Use the isolated SQLite database.
+        self.app.dependency_overrides[get_db] = lambda: self.db
+
+        # Bypass Super Admin authentication ONLY in entitlement
+        # business-logic tests. Production authentication is unchanged.
+        self.app.dependency_overrides[require_super_admin] = lambda: None
+
+        self.client = TestClient(self.app)
+
         self.headers={i:{'Authorization':'Bearer '+create_access_token({'sub':str(i)})} for i in range(2,5)}
-        self.headers[1]={}  # Platform management is intentionally login-free.
+        self.headers[1]={}  # Super Admin authentication is overridden in this test fixture only.
         self.normal=self.plan('normal',False,False)
         self.pro=self.plan('pro',True,True)
         self.assign(12,self.normal['id']);self.assign(13,self.pro['id'])

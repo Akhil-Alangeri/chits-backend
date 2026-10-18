@@ -276,11 +276,11 @@ def get_customer_profile_for_company(
     Example:
 
         Shiva:
-            mobile = 7288010526
+            mobile = os.getenv('MOBILE_NUMBER')
             profile_id = 3
 
         Megha:
-            mobile = 7288010526
+            mobile = os.getenv('MOBILE_NUMBER')
             profile_id = 7
 
     These are separate CustomerProfile records.

@@ -127,6 +127,9 @@ app.add_middleware(
 # ROUTERS
 # =========================================================
 
+from app.routes.super_admin_auth import router as super_admin_auth_router
+app.include_router(super_admin_auth_router)
+
 app.include_router(subscription_router)
 app.include_router(entitlement_router)
 

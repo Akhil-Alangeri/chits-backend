@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from app.core.database import get_db
+from app.routes.super_admin_auth import require_super_admin
 
 from app.schemas.company import (
     CompanyCreate,
@@ -42,7 +43,7 @@ router = APIRouter(
 )
 
 
-@router.patch("/{company_id}/status", response_model=CompanyResponse)
+@router.patch("/{company_id}/status", dependencies=[Depends(require_super_admin)], response_model=CompanyResponse)
 def update_company_status(company_id: int, data: CompanyStatusUpdate, request: Request,
                           db: Session = Depends(get_db)):
     ip_address, user_agent = get_request_metadata(request)
@@ -113,7 +114,7 @@ def register_company(
 # =========================================================
 
 @router.get(
-    "",
+    "", dependencies=[Depends(require_super_admin)],
     response_model=List[CompanyResponse]
 )
 def get_companies(
@@ -128,7 +129,7 @@ def get_companies(
 # =========================================================
 
 @router.get(
-    "/requests",
+    "/requests", dependencies=[Depends(require_super_admin)],
     response_model=List[CompanyResponse]
 )
 def get_company_requests(
@@ -143,7 +144,7 @@ def get_company_requests(
 # =========================================================
 
 @router.get(
-    "/{company_id}",
+    "/{company_id}", dependencies=[Depends(require_super_admin)],
     response_model=CompanyResponse
 )
 def get_company(
@@ -165,7 +166,7 @@ def get_company(
 # =========================================================
 
 @router.put(
-    "/{company_id}/approve"
+    "/{company_id}/approve", dependencies=[Depends(require_super_admin)]
 )
 async def approve_company_registration(
     company_id: int,

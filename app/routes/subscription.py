@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from app.core.database import get_db
+from app.routes.super_admin_auth import require_super_admin
 from app.core.dependencies import get_current_company_id
 from app.models.admin.company import Company
 from app.models.admin.subscription import SubscriptionPlan, Feature, PlanFeature, CompanyFeatureOverride
@@ -8,9 +9,7 @@ from app.schemas.subscription import PlanInput, CompanySubscriptionInput
 from app.services.entitlement_service import get_company_entitlements, plan_response
 from app.services.audit_log_service import create_audit_log
 
-# Login-free platform management, per the requested Super Admin behavior.
-# Deployment must restrict these routes externally if exposed to a public network.
-router = APIRouter(prefix="/super-admin", tags=["Subscriptions"])
+router = APIRouter(prefix="/super-admin", tags=["Subscriptions"], dependencies=[Depends(require_super_admin)])
 company_router = APIRouter(prefix="/company", tags=["Company entitlements"])
 
 
