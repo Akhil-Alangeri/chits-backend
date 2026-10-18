@@ -22,7 +22,7 @@ def sqlite_int(element, compiler, **kw):
 
 class RecoveryTests(unittest.TestCase):
     def setUp(self):
-        self.env = patch.dict(os.environ, {'SUPER_ADMIN_RESET_USERNAME': 'admin', 'SUPER_ADMIN_RESET_MOBILE': os.getenv('MOBILE_NUMBER'), 'MSG91_AUTH_KEY': 'test', 'MSG91_TEMPLATE_ID': 'test'})
+        self.env = patch.dict(os.environ, {'SUPER_ADMIN_RESET_USERNAME': 'admin', 'MOBILE_NUMBER': '9000000000', 'MSG91_AUTH_KEY': 'test', 'MSG91_TEMPLATE_ID': 'test'})
         self.env.start()
         self.engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
         Base.metadata.create_all(self.engine)

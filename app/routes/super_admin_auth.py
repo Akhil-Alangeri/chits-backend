@@ -102,7 +102,7 @@ def change(data: Change, user=Depends(require_super_admin), db: Session = Depend
     return {"message": "Password updated. Sign in with your new password."}
 
 def recovery_mobile(username):
-    mobile = os.getenv("SUPER_ADMIN_RESET_MOBILE", "")
+    mobile = os.getenv("MOBILE_NUMBER", "")
     if username != os.getenv("SUPER_ADMIN_RESET_USERNAME", "admin") or not re.fullmatch(r"[6-9][0-9]{9}", mobile):
         return None
     return mobile
