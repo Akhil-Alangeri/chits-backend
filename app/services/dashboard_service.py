@@ -703,7 +703,10 @@ def get_loan_cash_flow(
 
         )
 
+        .join(Loan, Loan.id == LoanTransaction.loan_id)
         .filter(
+            Loan.company_id == company_id,
+            Loan.direction == "given",
 
             and_(LoanTransaction.company_id == company_id, company_features.get("loans", False)),
 
@@ -723,31 +726,8 @@ def get_loan_cash_flow(
 
 
 
-    principal_repaid = money(
-
-        repayment_rows[0]
-
-    )
-
-
-
-    interest_received = money(
-
-        repayment_rows[1]
-
-    )
-
-
-
-    loan_repayments = (
-
-        principal_repaid
-
-        + interest_received
-
-    )
-
-
+    # Payment splits are actual money received; gross interest includes discounts.
+    loan_repayments = money(repayment_rows[2]) + money(repayment_rows[3])
 
     loan_repayment_cash = money(
 
@@ -968,6 +948,7 @@ def get_company_cash_bank_ledger(
             "upi",
 
             "bank_transfer",
+            "cheque",
 
         ):
 
@@ -1310,6 +1291,7 @@ def get_company_cash_bank_ledger(
             "upi",
 
             "bank_transfer",
+            "cheque",
 
         ):
 
@@ -1457,6 +1439,10 @@ def get_expense_summary(
             func.coalesce(func.sum(Expense.amount), 0),
         )
         .filter(and_(Expense.company_id == company_id, company_features.get("expenses", False)))
+        .filter(
+            Expense.expense_date >= selected_month_start,
+            Expense.expense_date < selected_next_month_start,
+        )
         .group_by(Expense.category)
         .order_by(func.sum(Expense.amount).desc())
         .all()
@@ -3348,7 +3334,7 @@ def get_dashboard(
                 "active",
             ]),
             func.lower(
-                PaymentTransaction.payment_method
+                func.trim(PaymentTransaction.payment_method)
             ) == "cash",
         )
 
@@ -3422,15 +3408,12 @@ def get_dashboard(
 
             ]),
 
-            func.lower(
-
-                PaymentTransaction.payment_method
-
-            ).in_([
+            func.lower(func.trim(PaymentTransaction.payment_method)).in_([
 
                 "upi",
 
                 "bank_transfer",
+                "cheque",
 
             ]),
 
@@ -3464,19 +3447,9 @@ def get_dashboard(
 
 
 
-    operational_balance = (
-
-        total_paid
-
-        + loan_cash_flow["loan_repayments"]
-
-        - loan_cash_flow["loan_given"]
-
-        - expense_summary["total"]
-
-    )
-
-
+    # Use the same complete ledger as the cash/bank cards. Applied installment
+    # totals exclude historical groups and overpayments and are not cash receipts.
+    operational_balance = total_cash_bank_balance
 
     # =====================================================
 
