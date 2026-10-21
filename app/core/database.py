@@ -39,6 +39,8 @@ else:
 
 engine = create_engine(
     DATABASE_URL,
+    # Keep SQL NOW() defaults consistent with Python datetime.utcnow timestamps.
+    connect_args={"init_command": "SET time_zone = '+00:00'"},
     pool_pre_ping=True,
     pool_recycle=1800,
     pool_size=5,

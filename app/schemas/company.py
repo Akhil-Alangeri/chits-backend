@@ -66,3 +66,9 @@ class CompanyResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class CompanyOverviewResponse(CompanyResponse):
+    chit_group_amounts: list[Decimal] = Field(default_factory=list)
+    active_customers_count: int = 0
+    total_customers_count: int = 0

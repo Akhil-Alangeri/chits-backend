@@ -1,6 +1,9 @@
 
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
+from sqlalchemy import case, func
+from app.models.admin.customer_profile import CustomerProfile
+from app.models.admin.chit_group import ChitGroup
 from fastapi import HTTPException
 
 
@@ -204,6 +207,31 @@ def create_company(
 # GET ALL COMPANIES
 # ==========================================
 
+def add_company_overviews(db: Session, companies):
+    """Load company activity in bulk without multiplying customers by chit groups."""
+    if not companies:
+        return companies
+    company_ids = [company.id for company in companies]
+    counts = {
+        company_id: (total, active)
+        for company_id, total, active in db.query(
+            CustomerProfile.company_id,
+            func.count(CustomerProfile.id),
+            func.sum(case((CustomerProfile.status == "active", 1), else_=0)),
+        ).filter(CustomerProfile.company_id.in_(company_ids))
+        .group_by(CustomerProfile.company_id).all()
+    }
+    amounts = {}
+    for company_id, amount in db.query(
+        ChitGroup.company_id, ChitGroup.chit_value
+    ).filter(ChitGroup.company_id.in_(company_ids)).order_by(ChitGroup.id).all():
+        amounts.setdefault(company_id, []).append(amount)
+    for company in companies:
+        company.total_customers_count, company.active_customers_count = counts.get(company.id, (0, 0))
+        company.chit_group_amounts = amounts.get(company.id, [])
+    return companies
+
+
 def get_all_companies(
     db: Session
 ):
@@ -214,7 +242,7 @@ def get_all_companies(
         .all()
     )
 
-    return companies
+    return add_company_overviews(db, companies)
 
 def get_pending_companies(
     db: Session
@@ -231,20 +259,13 @@ def get_pending_companies(
 
 #=============================
 #   Get Single Company Details
-def get_company_details(
-    db: Session,
-    company_id: int
-):
-    return (
-        db.query(Company)
-        .filter(
-            Company.id == company_id
-        )
-        .first()
-    )
-    
-    
-    
+def get_company_details(db: Session, company_id: int):
+    company = db.query(Company).filter(Company.id == company_id).first()
+    if company is not None:
+        add_company_overviews(db, [company])
+    return company
+
+
 #===========================
 # Generating Login Ids to company
 #===========================

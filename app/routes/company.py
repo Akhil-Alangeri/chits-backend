@@ -16,7 +16,8 @@ from app.routes.super_admin_auth import require_super_admin
 
 from app.schemas.company import (
     CompanyCreate,
-    CompanyResponse
+    CompanyResponse,
+    CompanyOverviewResponse
 )
 from app.schemas.company import CompanyStatusUpdate
 from app.services.company_service import change_company_status
@@ -115,7 +116,7 @@ def register_company(
 
 @router.get(
     "", dependencies=[Depends(require_super_admin)],
-    response_model=List[CompanyResponse]
+    response_model=List[CompanyOverviewResponse]
 )
 def get_companies(
     db: Session = Depends(get_db)
@@ -145,7 +146,7 @@ def get_company_requests(
 
 @router.get(
     "/{company_id}", dependencies=[Depends(require_super_admin)],
-    response_model=CompanyResponse
+    response_model=CompanyOverviewResponse
 )
 def get_company(
     company_id: int,

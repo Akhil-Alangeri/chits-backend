@@ -77,9 +77,6 @@ def get_month_range(target_date: date):
             1,
 
         )
-
-
-
     return start_date, next_month
 
 
