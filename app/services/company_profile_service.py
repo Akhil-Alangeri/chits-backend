@@ -1,6 +1,5 @@
 from sqlalchemy.orm import Session
-from pathlib import Path
-from uuid import uuid4
+from app.services.logo_storage import LOGO_TYPES, save_logo
 
 from fastapi import UploadFile
 
@@ -135,10 +134,7 @@ async def update_company_profile(
         # ALLOWED IMAGE TYPES
         # -----------------------------------------
 
-        allowed_types = {
-            "image/png": ".png",
-            "image/jpeg": ".jpg",
-        }
+        allowed_types = LOGO_TYPES
 
         if logo.content_type not in allowed_types:
 
@@ -164,52 +160,7 @@ async def update_company_profile(
                 "error": "logo_too_large"
             }
 
-        # -----------------------------------------
-        # CREATE LOGO DIRECTORY
-        # -----------------------------------------
-
-        upload_dir = Path(
-            "uploads/company-logos"
-        )
-
-        upload_dir.mkdir(
-            parents=True,
-            exist_ok=True
-        )
-
-        # -----------------------------------------
-        # UNIQUE FILE NAME
-        # -----------------------------------------
-
-        extension = allowed_types[
-            logo.content_type
-        ]
-
-        filename = (
-            f"company_{uuid4().hex}"
-            f"{extension}"
-        )
-
-        file_path = upload_dir / filename
-
-        # -----------------------------------------
-        # SAVE FILE
-        # -----------------------------------------
-
-        with open(
-            file_path,
-            "wb"
-        ) as file:
-
-            file.write(file_content)
-
-        # -----------------------------------------
-        # SAVE URL IN DATABASE
-        # -----------------------------------------
-
-        company.logo_url = (
-            f"/uploads/company-logos/{filename}"
-        )
+        company.logo_url = save_logo(file_content, logo.content_type)
 
     # =========================================
     # SAVE DATABASE

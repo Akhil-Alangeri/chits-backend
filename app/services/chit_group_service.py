@@ -10,6 +10,7 @@ from app.models.admin.chit_group import ChitGroup
 from app.models.admin.chit_months import ChitMonth
 from app.models.admin.company import Company
 from app.services.audit_log_service import create_audit_log, snapshot_model
+from app.services.welcome_notifications import enqueue_group_welcomes, normalized
 
 
 from app.schemas.chit_group import (
@@ -1194,6 +1195,8 @@ def update_chit_group(
                 user_agent=user_agent,
             )
 
+        if normalized(old_status) != "active" and normalized(chit.status) == "active":
+            enqueue_group_welcomes(db, chit.id, company_id)
         db.commit()
 
     except Exception:

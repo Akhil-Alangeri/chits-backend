@@ -3,6 +3,8 @@ import os
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from app.routes.company_logos import router as company_logos_router
+from app.services.logo_storage import UPLOAD_ROOT
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -67,14 +69,17 @@ app = FastAPI(
 
 
 # =========================================================
-# TEMPORARY LOCAL UPLOADS
+# COMPANY LOGOS AND LEGACY LOCAL UPLOADS
 # =========================================================
 
-os.makedirs("uploads/company-logos", exist_ok=True)
+(UPLOAD_ROOT / "company-logos").mkdir(parents=True, exist_ok=True)
+
+# Register before the legacy static mount so bucket objects are served too.
+app.include_router(company_logos_router)
 
 app.mount(
     "/uploads",
-    StaticFiles(directory="uploads"),
+    StaticFiles(directory=str(UPLOAD_ROOT)),
     name="uploads",
 )
 
@@ -194,3 +199,5 @@ def health(db: Session = Depends(get_db)):
         "status": "OK",
         "database": "Connected",
     }
+from app.routes.company_recovery import router as company_recovery_router
+app.include_router(company_recovery_router)

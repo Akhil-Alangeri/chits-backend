@@ -29,9 +29,11 @@ Use `/` for a database-independent startup probe. After deployment, manually che
 
 Before any manual migration, compare the imported database's alembic_version with `python -m alembic heads` and review pending revisions. Do not stamp, upgrade, or downgrade automatically. The existing bootstrap migration now requires BOOTSTRAP_ADMIN_PASSWORD (8?72 UTF-8 bytes) only when creating the initial admin. Supply it securely for that manual migration if needed. Existing accounts are untouched; if the old fixed bootstrap credential was ever used, change that account password before production launch.
 
-Company logos remain on the ephemeral, instance-local Cloud Run filesystem. Upload directories are created on startup; uploaded files can disappear on restart and are not shared across instances. Cloud Storage migration is required before final production launch.
+Company logos use a private Cloud Storage bucket in production. Set `COMPANY_LOGO_BUCKET` to its name and grant the runtime service account `roles/storage.objectUser` on that bucket. The API serves the existing `/uploads/company-logos/{filename}` URLs, so no public bucket access or expiring signed URLs are needed. Cloud Run rejects logo uploads if the bucket is not configured; it never silently saves new logos to ephemeral storage. Local development without the setting uses the backend uploads directory.
 
-The in-process scheduler is not started by main.py. Move production scheduling to Google Cloud Scheduler calling an authenticated Cloud Run endpoint/job in a later task.
+Before switching production, copy surviving files from `uploads/company-logos/` into the bucket under `company-logos/`, preserving filenames. Existing database URLs continue to work. Files already lost from old instances must be uploaded again. Deploy with the updated requirements and bucket setting together. Verify by uploading a logo, logging out/in, and loading its URL after a revision restart or from another instance.
+
+The in-process scheduler is not started by main.py. Membership welcome emails require the separate Cloud Run Job and Cloud Scheduler setup in [WELCOME_EMAILS.md](WELCOME_EMAILS.md). Deploying the API alone does not start email delivery. The production job uses batch mode, not the local `--watch` process. `deploy/welcome-worker.sh` configures the job and a one-minute authenticated schedule from Google Cloud Shell after the actual production migration has been verified.
 
 Validation here does not replace an actual Linux container build and Cloud SQL connectivity check. No production database is accessed by local checks.
 

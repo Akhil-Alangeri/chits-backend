@@ -143,7 +143,7 @@ async def update_profile(
 
         raise HTTPException(
             status_code=400,
-            detail="Only PNG and JPEG images are allowed."
+            detail="Only PNG, JPEG and WEBP images are allowed."
         )
 
     if result.get("error") == "logo_too_large":

@@ -9,6 +9,7 @@ from app.services.chit_installment_service import (
     generate_installments_for_member,
 )   
 from app.services.audit_log_service import create_audit_log, snapshot_model
+from app.services.welcome_notifications import enqueue_membership_welcome, normalized
 
 
 CHIT_MEMBER_AUDIT_FIELDS = [
@@ -266,6 +267,7 @@ def add_chit_member(
         user_agent=user_agent,
     )
 
+    enqueue_membership_welcome(db, member.id, company_id)
     db.commit()
 
     db.refresh(member)
@@ -430,6 +432,8 @@ def update_chit_member(
             user_agent=user_agent,
         )
 
+    if normalized(old_values["status"]) != normalized(member.status):
+        enqueue_membership_welcome(db, member.id, company_id)
     db.commit()
 
     db.refresh(member)
