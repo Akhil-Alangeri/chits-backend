@@ -38,13 +38,11 @@ def get_customer_auction_winners(
     current_customer=Depends(get_current_customer),
 ):
 
-    customer_profile_id = current_customer[
-        "customer_profile_id"
-    ]
+    mobile = current_customer["mobile"]
 
     result = get_customer_chit_auction_winners(
         db=db,
-        customer_profile_id=customer_profile_id,
+        mobile=mobile,
         chit_member_id=chit_member_id,
     )
 

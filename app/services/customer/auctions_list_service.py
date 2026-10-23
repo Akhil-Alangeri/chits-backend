@@ -15,7 +15,7 @@ from app.models.admin.customer_profile import CustomerProfile
 
 def get_customer_chit_auction_winners(
     db: Session,
-    customer_profile_id: int,
+    mobile: str,
     chit_member_id: int,
 ):
 
@@ -43,9 +43,10 @@ def get_customer_chit_auction_winners(
             # current selected chit member
             ChitMember.id == chit_member_id,
 
-            # logged-in customer
-            CustomerProfile.id
-            == customer_profile_id,
+            # Match the authenticated identity across company-specific profiles,
+            # as the customer chit list and details endpoints do.
+            CustomerProfile.mobile == mobile,
+            ChitMember.status == "confirmed",
 
             # customer must be active
             CustomerProfile.status
