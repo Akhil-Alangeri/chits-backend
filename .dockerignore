@@ -15,3 +15,4 @@ uploads/
 .mypy_cache/
 tmp/
 tests/
+previews/
