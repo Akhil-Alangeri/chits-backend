@@ -5,6 +5,8 @@ from sqlalchemy import case, func
 from app.models.admin.customer_profile import CustomerProfile
 from app.models.admin.chit_group import ChitGroup
 from fastapi import HTTPException
+from app.services.entitlement_service import ensure_admin_capacity, lock_company
+from app.services.subscription_transactions import retry_subscription_transaction
 
 
 def change_company_status(db, company_id, new_status, ip_address=None, user_agent=None):
@@ -341,19 +343,16 @@ def generate_company_login_id(
 #===============================
 
 
+@retry_subscription_transaction
 def approve_company(
     db: Session,
     company_id: int,
     ip_address: str | None = None,
     user_agent: str | None = None,
 ):
-    company = (
-        db.query(Company)
-        .filter(
-            Company.id == company_id
-        )
-        .first()
-    )
+    # Approval creates an admin seat. Lock before reading status so two approval
+    # requests cannot both provision credentials for the same pending company.
+    company = lock_company(db, company_id)
 
     if not company:
         return None
@@ -410,6 +409,8 @@ def approve_company(
     # =====================================
     # SAVE LOGIN CREDENTIALS
     # =====================================
+
+    ensure_admin_capacity(db, company.id)
 
     user = User(
         company_id=company.id,

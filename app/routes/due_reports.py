@@ -30,9 +30,11 @@ from app.services.due_reports_service import (
 )
 
 from app.core.dependencies import get_current_user
+from app.services.entitlement_service import require_company_feature
 
 
 router = APIRouter(
+    dependencies=[Depends(require_company_feature("reports"))],
     prefix="/reports",
     tags=["Reports"],
 )

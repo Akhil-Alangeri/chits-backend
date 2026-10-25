@@ -73,17 +73,22 @@ class EntitlementTests(unittest.TestCase):
         r=self.client.put(f'/super-admin/companies/{company}/subscription',headers=self.headers[1],json={'plan_id':plan,'overrides':overrides or {}})
         self.assertEqual(r.status_code,200,r.text);return r.json()
 
+    def optional_modules(self, features):
+        # The response now also includes core guarantees and new optional keys.
+        # Continue checking both original module permissions exactly.
+        return {key: features[key] for key in ('loans', 'expenses')}
+
     def test_plan_edit_overrides_and_live_sessions(self):
         body={k:v for k,v in self.normal.items() if k not in ('id','created_at','updated_at')}
         body.update(price='25000.00',features={'loans':True,'expenses':False})
         r=self.client.put(f"/super-admin/plans/{self.normal['id']}",headers=self.headers[1],json=body)
         self.assertEqual(r.status_code,200,r.text);self.assertEqual(float(r.json()['price']),25000)
         for user in (2,3):
-            self.assertEqual(self.client.get('/company/entitlements',headers=self.headers[user]).json()['features'],{'loans':True,'expenses':False})
+            self.assertEqual(self.optional_modules(self.client.get('/company/entitlements',headers=self.headers[user]).json()['features']),{'loans':True,'expenses':False})
         state=self.assign(12,self.normal['id'],{'loans':False,'expenses':True})
-        self.assertEqual(state['features'],{'loans':False,'expenses':True})
+        self.assertEqual(self.optional_modules(state['features']),{'loans':False,'expenses':True})
         state=self.assign(12,self.normal['id'],{'loans':None,'expenses':None})
-        self.assertEqual(state['overrides'],{});self.assertEqual(state['features'],{'loans':True,'expenses':False})
+        self.assertEqual(state['overrides'],{});self.assertEqual(self.optional_modules(state['features']),{'loans':True,'expenses':False})
         self.assign(12,self.pro['id'],{'loans':False})
         self.assertEqual(self.client.get('/loans',headers=self.headers[3]).status_code,403)
         body['is_active']=False
@@ -111,7 +116,7 @@ class EntitlementTests(unittest.TestCase):
         for extra in [{'company_id':13},{'role':'super_admin'},{'overrides':{'unknown':True}}]:
             r=self.client.put('/super-admin/companies/12/subscription',json={'plan_id':self.pro['id'],**extra})
             self.assertEqual(r.status_code,422,r.text)
-        self.assertEqual(self.client.get('/company/entitlements?company_id=13',headers=self.headers[2]).json()['features'],{'loans':False,'expenses':False})
+        self.assertEqual(self.optional_modules(self.client.get('/company/entitlements?company_id=13',headers=self.headers[2]).json()['features']),{'loans':False,'expenses':False})
 
     def test_operational_access_isolation_and_data_retention(self):
         loan=self.client.post('/loans',headers=self.headers[4],json={'person_name':'Borrower','direction':'given','principal_amount':1000,'start_date':'2026-10-06'})
@@ -129,7 +134,8 @@ class EntitlementTests(unittest.TestCase):
         self.assertEqual(get_loan_summary(self.db,13)['given_amount'],0)
         self.assertEqual(get_expense_summary(self.db,13)['total'],0)
         audits, count = get_audit_history(self.db, company_id=13)
-        self.assertFalse(any(a.module in ('Loans', 'Loan Transactions', 'Expenses') for a in audits))
+        self.assertTrue(any(a.module == 'Loans' for a in audits))
+        self.assertTrue(any(a.module == 'Expenses' for a in audits))
         self.assign(13,self.pro['id'])
         self.assertEqual(self.client.get(f"/loans/{loan.json()['id']}",headers=self.headers[4]).status_code,200)
         self.assertEqual(self.client.get(f"/expenses/{expense.json()['id']}",headers=self.headers[4]).status_code,200)
@@ -149,7 +155,7 @@ class EntitlementTests(unittest.TestCase):
         self.assertEqual(self.client.put(f"/super-admin/plans/{self.pro['id']}",headers=self.headers[1],json=body).status_code,200)
         self.assertEqual(self.client.get('/loans',headers=self.headers[4]).status_code,200)
         self.db.get(Company,12).subscription_plan_id=None;self.db.commit()
-        self.assertEqual(get_company_effective_features(self.db,12),{'loans':False,'expenses':False})
+        self.assertEqual(self.optional_modules(get_company_effective_features(self.db,12)),{'loans':False,'expenses':False})
         self.assertEqual(self.client.get('/loans',headers=self.headers[2]).status_code,403)
 
     def test_company_status_controls_login_and_existing_sessions(self):

@@ -39,6 +39,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.services.entitlement_service import require_company_feature
 
 from app.models.admin.user import User
 
@@ -57,6 +58,7 @@ from app.services.ledger_report_service import (
 # =========================================================
 
 router = APIRouter(
+    dependencies=[Depends(require_company_feature("reports"))],
     prefix="/reports",
     tags=["Reports"],
 )

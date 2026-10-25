@@ -56,7 +56,7 @@ from app.services.expenses_reports_service import (
 from app.services.entitlement_service import require_company_feature
 
 router = APIRouter(
-    dependencies=[Depends(require_company_feature("expenses"))],
+    dependencies=[Depends(require_company_feature("expenses")), Depends(require_company_feature("reports"))],
     prefix="/reports",
     tags=["Reports"],
 )

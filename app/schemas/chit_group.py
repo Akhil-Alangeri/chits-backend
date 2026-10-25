@@ -1,6 +1,6 @@
 from datetime import date
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -104,7 +104,7 @@ class ChitGroupUpdate(BaseModel):
 
     start_date: Optional[date] = None
 
-    status: Optional[str] = "draft"
+    status: Literal["draft", "upcoming", "active", "paused", "cancelled", "completed"] = "draft"
 
     # -----------------------------------------------------
     # MONTH-WISE SCHEDULE UPDATE

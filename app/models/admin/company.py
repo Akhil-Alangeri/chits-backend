@@ -10,7 +10,13 @@ class Company(Base):
     __tablename__ = "companies"
 
     subscription_plan_id = Column(BigInteger, ForeignKey("subscription_plans.id"), nullable=True, index=True)
-    subscription_plan = relationship("SubscriptionPlan")
+    subscription_plan = relationship("SubscriptionPlan", foreign_keys=[subscription_plan_id])
+    # No default or backfill: existing companies keep their reviewed legacy access.
+    subscription_started_at = Column(DateTime, nullable=True)
+    subscription_ends_at = Column(DateTime, nullable=True)
+    subscription_status = Column(String(30), nullable=True)
+    pending_subscription_plan_id = Column(BigInteger, ForeignKey("subscription_plans.id"), nullable=True)
+    pending_subscription_effective_at = Column(DateTime, nullable=True)
 
     id = Column(
         BigInteger,

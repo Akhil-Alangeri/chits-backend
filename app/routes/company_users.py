@@ -8,6 +8,8 @@ from app.services.company_user_service import (
     company_users, get_company_user, ensure_login_available, create_company_user,
     save_user, snapshot_model, AUDIT_FIELDS,
 )
+from app.services.entitlement_service import ensure_company_feature, ensure_staff_capacity
+from app.services.subscription_transactions import retry_subscription_transaction
 
 router = APIRouter(prefix="/company/users", tags=["Company Users"])
 
@@ -28,8 +30,10 @@ def get_user(user_id: int, db: Session = Depends(get_db), admin=Depends(require_
 
 
 @router.put("/{user_id}", response_model=UserResponse)
+@retry_subscription_transaction
 def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db), admin=Depends(require_company_admin)):
     user = get_company_user(db, admin, user_id, mutable=True)
+    ensure_company_feature(db, admin.company_id, "staff_permissions", current=True)
     ensure_login_available(db, data.login_id, user.id)
     old = snapshot_model(user, AUDIT_FIELDS)
     user.full_name, user.login_id = data.full_name, data.login_id
@@ -37,21 +41,29 @@ def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db), a
 
 
 @router.patch("/{user_id}/status", response_model=UserResponse)
+@retry_subscription_transaction
 def change_status(user_id: int, data: UserStatus, db: Session = Depends(get_db), admin=Depends(require_company_admin)):
     user = get_company_user(db, admin, user_id, mutable=True)
+    if data.status == "active":
+        ensure_company_feature(db, admin.company_id, "staff_permissions", current=True)
+        if user.status != "active":
+            ensure_staff_capacity(db, admin.company_id)
     old = snapshot_model(user, AUDIT_FIELDS)
     user.status = data.status
     return save_user(db, admin, user, "STATUS_CHANGE", old)
 
 
 @router.patch("/{user_id}/password", response_model=UserResponse)
+@retry_subscription_transaction
 def change_password(user_id: int, data: PasswordChange, db: Session = Depends(get_db), admin=Depends(require_company_admin)):
     user = get_company_user(db, admin, user_id, mutable=True)
+    ensure_company_feature(db, admin.company_id, "staff_permissions", current=True)
     user.password_hash = hash_password(data.password)
     return save_user(db, admin, user, "UPDATE", password_changed=True)
 
 
 @router.delete("/{user_id}", status_code=204)
+@retry_subscription_transaction
 def delete_user(user_id: int, db: Session = Depends(get_db), admin=Depends(require_company_admin)):
     user = get_company_user(db, admin, user_id, mutable=True)
     old = snapshot_model(user, AUDIT_FIELDS)

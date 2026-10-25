@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.models.support.ticket import SupportTicket, TicketMessage
 from app.models.admin.user import User
 from app.models.admin.customer_profile import CustomerProfile
+from app.services.entitlement_service import ensure_company_feature
 from app.services.audit_log_service import (
     create_audit_log,
     snapshot_model,
@@ -431,6 +432,8 @@ def create_customer_ticket(
             "You are not authorized to create a ticket for this company."
         )
 
+    ensure_company_feature(db, customer_profile.company_id, "support_tickets")
+
     subject = _normalize_text(subject)
     description = _normalize_text(description)
 
@@ -758,6 +761,8 @@ def create_customer_message(
 
     ticket, customer_profile = result
 
+    ensure_company_feature(db, ticket.company_id, "support_tickets")
+
     message = _normalize_text(message)
 
     if not message:
@@ -909,6 +914,8 @@ def create_admin_ticket(
             "Customer does not belong to this company."
         )
 
+    ensure_company_feature(db, customer_profile.company_id, "support_tickets")
+
     subject = _normalize_text(subject)
     description = _normalize_text(description)
 
@@ -965,56 +972,60 @@ def create_admin_ticket(
 # GET ADMIN TICKETS
 # ============================================================
 
+
 def get_admin_tickets(
     db: Session,
     company_id: int,
     status: str | None = None,
     priority: str | None = None,
     assigned_to_user_id: int | None = None,
-) -> list[SupportTicket]:
+    page: int = 1,
+    page_size: int = 10,
+) -> tuple[list[SupportTicket], int]:
     """
-    Get tickets belonging only to the authenticated admin's
-    company.
+    Get paginated admin support tickets,
+    restricted to the authenticated company.
     """
 
     query = (
         db.query(SupportTicket)
-        .filter(
-            SupportTicket.company_id == company_id
-        )
+        .filter(SupportTicket.company_id == company_id)
     )
 
     if status is not None:
-
         status = _validate_status(status)
-
         query = query.filter(
             SupportTicket.status == status
         )
 
     if priority is not None:
-
         priority = _validate_priority(priority)
-
         query = query.filter(
             SupportTicket.priority == priority
         )
 
     if assigned_to_user_id is not None:
-
         query = query.filter(
-            SupportTicket.assigned_to_user_id
-            == assigned_to_user_id
+            SupportTicket.assigned_to_user_id == assigned_to_user_id
         )
 
-    return (
+    # Count all matching tickets before pagination.
+    total_count = query.count()
+
+    # Newest updated tickets first.
+    tickets = (
         query
         .order_by(
             SupportTicket.updated_at.desc(),
             SupportTicket.id.desc(),
         )
+        .offset((page - 1) * page_size)
+        .limit(page_size)
         .all()
     )
+
+    return tickets, total_count
+
 
 
 # ============================================================
@@ -1071,6 +1082,8 @@ def create_admin_message(
         raise ValueError(
             "Ticket not found or you are not authorized to access it."
         )
+
+    ensure_company_feature(db, ticket.company_id, "support_tickets")
 
     message = _normalize_text(message)
 
@@ -1200,6 +1213,8 @@ def update_ticket_status(
             "Ticket not found or you are not authorized to update it."
         )
 
+    ensure_company_feature(db, ticket.company_id, "support_tickets")
+
     status = _validate_status(status)
 
     old_values = _ticket_snapshot(ticket)
@@ -1283,6 +1298,8 @@ def update_ticket_priority(
             "Ticket not found or you are not authorized to update it."
         )
 
+    ensure_company_feature(db, ticket.company_id, "support_tickets")
+
     priority = _validate_priority(priority)
 
     old_values = _ticket_snapshot(ticket)
@@ -1343,6 +1360,8 @@ def update_ticket_category(
         raise ValueError(
             "Ticket not found or you are not authorized to update it."
         )
+
+    ensure_company_feature(db, ticket.company_id, "support_tickets")
 
     category = _validate_category(category)
 
@@ -1406,6 +1425,8 @@ def assign_ticket(
         raise ValueError(
             "Ticket not found or you are not authorized to update it."
         )
+
+    ensure_company_feature(db, ticket.company_id, "support_tickets")
 
     old_values = _ticket_snapshot(ticket)
 
@@ -1542,6 +1563,8 @@ def update_ticket(
         raise ValueError(
             "Ticket not found or you are not authorized to update it."
         )
+
+    ensure_company_feature(db, ticket.company_id, "support_tickets")
 
     old_values = _ticket_snapshot(ticket)
 
@@ -1727,6 +1750,8 @@ def delete_ticket(
 
     if not ticket:
         return False
+
+    ensure_company_feature(db, ticket.company_id, "support_tickets")
 
     old_values = _ticket_snapshot(ticket)
     ticket_number = ticket.ticket_number

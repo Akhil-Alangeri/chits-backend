@@ -1,4 +1,5 @@
 from datetime import date
+from app.services.subscription_transactions import retry_subscription_transaction
 
 from sqlalchemy.orm import Session
 from dateutil.relativedelta import relativedelta
@@ -11,6 +12,7 @@ from app.models.admin.chit_months import ChitMonth
 from app.models.admin.company import Company
 from app.services.audit_log_service import create_audit_log, snapshot_model
 from app.services.welcome_notifications import enqueue_group_welcomes, normalized
+from app.services.entitlement_service import ensure_group_capacity, lock_company
 
 
 from app.schemas.chit_group import (
@@ -561,6 +563,7 @@ def auto_complete_expired_chits(
 # UPDATE CHIT
 # =========================================================
 
+@retry_subscription_transaction
 def update_chit_group(
     db: Session,
     company_id: int,
@@ -574,10 +577,16 @@ def update_chit_group(
     # GET CHIT
     # =====================================================
 
-    chit = get_chit_group(
-        db,
-        company_id,
-        chit_id,
+    # Serialize status transitions for a tenant before reading the group's
+    # current status. A locking read also refreshes an identity-map value that
+    # may have been loaded before waiting for the company lock on MySQL.
+    lock_company(db, company_id)
+    chit = (
+        db.query(ChitGroup)
+        .filter(ChitGroup.id == chit_id, ChitGroup.company_id == company_id)
+        .populate_existing()
+        .with_for_update()
+        .first()
     )
 
     if not chit:
@@ -940,6 +949,14 @@ def update_chit_group(
             }
 
     # =====================================================
+    # SUBSCRIPTION CAPACITY
+    # =====================================================
+
+    capacity_statuses = {"active", "upcoming", "paused"}
+    if normalized(old_status) not in capacity_statuses and normalized(new_status) in capacity_statuses:
+        ensure_group_capacity(db, company_id)
+
+    # =====================================================
     # APPLY BASIC CHIT UPDATE
     # =====================================================
 
@@ -1224,10 +1241,14 @@ def delete_chit_group(
     user_agent: str | None = None,
 ):
 
-    chit = get_chit_group(
-        db,
-        company_id,
-        chit_id
+    # Use the same lock order as activation and subscription changes.
+    lock_company(db, company_id)
+    chit = (
+        db.query(ChitGroup)
+        .filter(ChitGroup.id == chit_id, ChitGroup.company_id == company_id)
+        .populate_existing()
+        .with_for_update()
+        .first()
     )
 
     if not chit:

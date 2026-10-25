@@ -123,12 +123,8 @@ def get_audit_history(
     # FILTERS
     # =====================================================
 
-    from app.services.entitlement_service import get_company_effective_features
-    features = get_company_effective_features(db, company_id)
-    if not features.get("loans", False):
-        query = query.filter(AuditLog.module.notin_(["Loans", "Loan Transactions"]))
-    if not features.get("expenses", False):
-        query = query.filter(AuditLog.module != "Expenses")
+    # Financial audit history remains visible across plan changes. Entitlements
+    # never suppress logging or erase the company's historical module activity.
 
     if action:
         query = query.filter(

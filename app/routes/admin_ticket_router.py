@@ -45,6 +45,7 @@ router = APIRouter(
 # GET ADMIN TICKETS
 # ============================================================
 
+
 @router.get("")
 def list_tickets(
     status_filter: str | None = Query(
@@ -53,12 +54,14 @@ def list_tickets(
     ),
     priority: str | None = None,
     assigned_to_user_id: int | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Get support tickets belonging only to the
-    authenticated admin's company.
+    Get paginated support tickets belonging
+    only to the authenticated admin's company.
     """
 
     company_id = current_user.company_id
@@ -70,28 +73,35 @@ def list_tickets(
         )
 
     try:
-
-        tickets = get_admin_tickets(
+        tickets, total_count = get_admin_tickets(
             db=db,
             company_id=company_id,
             status=status_filter,
             priority=priority,
             assigned_to_user_id=assigned_to_user_id,
+            page=page,
+            page_size=page_size,
         )
 
         return {
             "success": True,
             "message": "Support tickets fetched successfully.",
             "tickets": tickets,
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total": total_count,
+                "total_pages": (
+                    (total_count + page_size - 1) // page_size
+                ),
+            },
         }
 
     except ValueError as exc:
-
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         )
-
 
 # ============================================================
 # GET ADMIN TICKET DETAILS
