@@ -1183,6 +1183,7 @@ def update_loan(
 # CANCEL LOAN
 # =========================================================
 
+
 def cancel_loan(
     db: Session,
     company_id: int,
@@ -1191,68 +1192,42 @@ def cancel_loan(
     ip_address: str | None = None,
     user_agent: str | None = None,
 ):
-    """
-    Cancel a loan.
-    """
-
-    loan = get_loan_for_company(
-        db=db,
-        company_id=company_id,
-        loan_id=loan_id,
-    )
-
+    """Delete a loan and undo all its recorded cash/UPI movements atomically."""
+    loan = get_loan_for_company(db, company_id, loan_id)
     if not loan:
-        return {
-            "error": "loan_not_found",
-        }
-
-    if loan.status == "closed":
-        return {
-            "error": "loan_closed",
-            "message": (
-                "A closed loan cannot be cancelled."
-            ),
-        }
-
-    if loan.status == "cancelled":
-        return {
-            "error": "loan_already_cancelled",
-            "message": (
-                "Loan is already cancelled."
-            ),
-        }
+        return {"error": "loan_not_found", "message": "Loan not found."}
 
     old_values = _loan_snapshot(loan)
+    old_values["transactions"] = [
+        _loan_transaction_snapshot(transaction)
+        for transaction in loan.transactions
+    ]
 
-    loan.status = "cancelled"
+    try:
+        # The relationship cascades deletion to every associated transaction.
+        # Balances are derived from these transactions, so deleting them reverses
+        # both disbursements and repayments in their original payment channels.
+        db.delete(loan)
+        create_audit_log(
+            db=db,
+            company_id=company_id,
+            user_id=cancelled_by,
+            action="DELETE",
+            module="Loans",
+            entity_type="Loan",
+            entity_id=loan_id,
+            description=f"Cancelled and deleted loan #{loan_id} for '{loan.person_name}'",
+            old_values=old_values,
+            new_values=None,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
-    db.flush()
-
-    new_values = _loan_snapshot(loan)
-
-    create_audit_log(
-        db=db,
-        company_id=company_id,
-        user_id=cancelled_by,
-        action="STATUS_CHANGE",
-        module="Loans",
-        entity_type="Loan",
-        entity_id=loan.id,
-        description=(
-            f"Cancelled loan #{loan.id} for "
-            f"'{loan.person_name}'"
-        ),
-        old_values=old_values,
-        new_values=new_values,
-        ip_address=ip_address,
-        user_agent=user_agent,
-    )
-
-    db.commit()
-
-    db.refresh(loan)
-
-    return loan
+    return {"message": "Loan cancelled and deleted successfully.", "loan_id": loan_id}
 
 
 # =========================================================

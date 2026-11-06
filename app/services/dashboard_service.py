@@ -260,6 +260,7 @@ def get_loan_summary(
         .filter(
 
             and_(Loan.company_id == company_id, company_features.get("loans", False)),
+            Loan.status != "cancelled",
 
         )
 
@@ -554,98 +555,27 @@ def get_loan_cash_flow(
 ):
 
     company_features = get_company_effective_features(db, company_id)
-    loans = (
-
-        db.query(Loan)
-
-        .filter(
-
-            and_(Loan.company_id == company_id, company_features.get("loans", False)),
-
+    disbursements = (
+        db.query(
+            func.coalesce(func.sum(LoanTransaction.cash_amount), 0),
+            func.coalesce(func.sum(LoanTransaction.upi_amount), 0),
         )
-
-        .all()
-
+        .join(Loan, Loan.id == LoanTransaction.loan_id)
+        .filter(
+            Loan.company_id == company_id,
+            LoanTransaction.company_id == company_id,
+            company_features.get("loans", False),
+            Loan.status != "cancelled",
+            Loan.direction == "given",
+            LoanTransaction.transaction_type == "disbursement",
+        )
+        .one()
     )
+    loan_given_cash = money(disbursements[0])
+    loan_given_upi = money(disbursements[1])
+    loan_given = loan_given_cash + loan_given_upi
 
-
-
-    loan_given = Decimal("0")
-
-
-
-    loan_given_cash = Decimal("0")
-
-    loan_given_upi = Decimal("0")
-
-
-
-    for loan in loans:
-
-
-
-        if loan.direction == "given":
-
-
-
-            loan_given += money(
-
-                loan.principal_amount
-
-            )
-
-
-
-            # Get disbursement transaction
-
-            disbursement = (
-
-                db.query(LoanTransaction)
-
-                .filter(
-
-                    and_(LoanTransaction.company_id == company_id, company_features.get("loans", False)),
-
-                    LoanTransaction.loan_id == loan.id,
-
-                    LoanTransaction.transaction_type == "disbursement",
-
-                )
-
-                .first()
-
-            )
-
-
-
-            if disbursement:
-
-
-
-                loan_given_cash += money(
-
-                    disbursement.cash_amount
-
-                )
-
-
-
-                loan_given_upi += money(
-
-                    disbursement.upi_amount
-
-                )
-
-
-
-    # -----------------------------------------------------
-
-    # LOAN REPAYMENTS
-
-    # -----------------------------------------------------
-
-
-
+    # Repayment splits represent actual receipts, including discounted interest.
     repayment_rows = (
 
         db.query(
@@ -704,6 +634,7 @@ def get_loan_cash_flow(
         .filter(
             Loan.company_id == company_id,
             Loan.direction == "given",
+            Loan.status != "cancelled",
 
             and_(LoanTransaction.company_id == company_id, company_features.get("loans", False)),
 
@@ -834,7 +765,7 @@ def get_company_cash_bank_ledger(
         total
 
     """
-    company_features = get_company_effective_features(db, company_id)
+    # Feature access controls new operations, never historical money movements.
 
 
 
@@ -1037,9 +968,10 @@ def get_company_cash_bank_ledger(
 
         .filter(
 
-            and_(Loan.company_id == company_id, company_features.get("loans", False)),
+            Loan.company_id == company_id,
+            Loan.status != "cancelled",
 
-            and_(LoanTransaction.company_id == company_id, company_features.get("loans", False)),
+            LoanTransaction.company_id == company_id,
 
         )
 
@@ -1241,7 +1173,7 @@ def get_company_cash_bank_ledger(
 
         .filter(
 
-            and_(Expense.company_id == company_id, company_features.get("expenses", False)),
+            Expense.company_id == company_id,
 
         )
 
@@ -1377,7 +1309,7 @@ def get_expense_summary(
         db.query(func.coalesce(func.sum(Expense.amount), 0))
         .filter(
             and_(Expense.company_id == company_id, company_features.get("expenses", False)),
-            func.lower(Expense.payment_method) == "cash",
+            func.lower(func.trim(Expense.payment_method)) == "cash",
         )
         .one()
     )
@@ -1386,7 +1318,7 @@ def get_expense_summary(
         db.query(func.coalesce(func.sum(Expense.amount), 0))
         .filter(
             and_(Expense.company_id == company_id, company_features.get("expenses", False)),
-            func.lower(Expense.payment_method) == "upi",
+            func.lower(func.trim(Expense.payment_method)).in_(["upi", "bank_transfer", "cheque"]),
         )
         .one()
     )
@@ -1410,7 +1342,7 @@ def get_expense_summary(
             and_(Expense.company_id == company_id, company_features.get("expenses", False)),
             Expense.expense_date >= selected_month_start,
             Expense.expense_date < selected_next_month_start,
-            func.lower(Expense.payment_method) == "cash",
+            func.lower(func.trim(Expense.payment_method)) == "cash",
         )
         .one()
     )
@@ -1421,7 +1353,7 @@ def get_expense_summary(
             and_(Expense.company_id == company_id, company_features.get("expenses", False)),
             Expense.expense_date >= selected_month_start,
             Expense.expense_date < selected_next_month_start,
-            func.lower(Expense.payment_method) == "upi",
+            func.lower(func.trim(Expense.payment_method)).in_(["upi", "bank_transfer", "cheque"]),
         )
         .one()
     )
@@ -3325,11 +3257,6 @@ def get_dashboard(
 
         .filter(
             ChitGroup.company_id == company_id,
-            ChitGroup.status == "active",
-            ChitMember.status.in_([
-                "confirmed",
-                "active",
-            ]),
             func.lower(
                 func.trim(PaymentTransaction.payment_method)
             ) == "cash",
@@ -3394,16 +3321,6 @@ def get_dashboard(
         .filter(
 
             ChitGroup.company_id == company_id,
-
-            ChitGroup.status == "active",
-
-            ChitMember.status.in_([
-
-                "confirmed",
-
-                "active",
-
-            ]),
 
             func.lower(func.trim(PaymentTransaction.payment_method)).in_([
 
@@ -3838,7 +3755,7 @@ def get_dashboard(
 
             "collections":
 
-                total_paid,
+                cash_collected_total + bank_upi_collected_total,
 
 
 

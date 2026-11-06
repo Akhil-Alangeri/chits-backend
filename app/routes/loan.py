@@ -367,7 +367,6 @@ def update_loan_route(
 
 @router.patch(
     "/{loan_id}/cancel",
-    response_model=LoanResponse,
 )
 def cancel_loan_route(
     loan_id: int,
@@ -398,13 +397,10 @@ def cancel_loan_route(
         if error == "loan_not_found":
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Loan not found.",
-            )
-
-        if error == "loan_closed":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=result["message"],
+                detail=result.get(
+                    "message",
+                    "Loan not found.",
+                ),
             )
 
     return result
