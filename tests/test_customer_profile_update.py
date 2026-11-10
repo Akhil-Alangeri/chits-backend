@@ -120,7 +120,7 @@ class CustomerProfileUpdateTests(unittest.TestCase):
         details = get_customer_details(self.db, 1, 1)
         self.assertTrue(details['active_chits'])
         self.assertTrue(all(row['member_name'] == 'New Name' for row in details['active_chits']))
-        payments = get_chit_payment_details(self.db, 1, 1)
+        payments = get_chit_payment_details(self.db, 1, 1, month=11, year=2026)
         self.assertEqual(payments['items'][0]['member_name'], 'New Name')
         self.assertEqual(payments['items'][0]['paid_amount'], 250)
         self.assertEqual(get_member_payment_summary(self.db, 1, 1, 1)['member_name'], 'New Name')

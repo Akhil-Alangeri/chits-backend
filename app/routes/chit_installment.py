@@ -144,14 +144,14 @@ def get_installments(
 def get_chit_payments(
     chit_id: int,
 
-    month: int | None = Query(
-        default=None,
+    month: int = Query(
+        ...,
         ge=1,
         le=12,
     ),
 
-    year: int | None = Query(
-        default=None,
+    year: int = Query(
+        ...,
         ge=2000,
         le=2100,
     ),
@@ -163,9 +163,7 @@ def get_chit_payments(
 
     db: Session = Depends(get_db),
 
-    # IMPORTANT:
-    # Replace this with your existing auth dependency
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
 
     result = get_chit_payment_details(

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ChitPaymentSummaryResponse(BaseModel):
@@ -19,7 +19,9 @@ class ChitPaymentSummaryResponse(BaseModel):
 
     others_amount: int
 
-    this_month_collections: int
+    this_month_collections: int = Field(
+        description="Payments allocated to the selected installment month, regardless of payment date.",
+    )
 
     this_month_due: int
 

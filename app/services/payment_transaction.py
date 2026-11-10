@@ -508,7 +508,7 @@ def get_chit_payment_summary(
         .all()
     )
 
-    total_due = total_paid = total_remaining = this_month_due = 0
+    total_due = total_paid = total_remaining = this_month_collections = this_month_due = 0
     paid_installments = partial_installments = pending_installments = 0
 
     for installment in installments:
@@ -521,6 +521,9 @@ def get_chit_payment_summary(
         # Collections remain the actual total received across all installments.
         total_paid += paid_amount
         if month_start <= installment.due_date < next_month:
+            # The payment form's selected month is the linked installment month.
+            # Include all its transactions, regardless of receipt or audit dates.
+            this_month_collections += paid_amount
             this_month_due += remaining_amount
         if paid_amount <= 0:
             pending_installments += 1
@@ -529,18 +532,6 @@ def get_chit_payment_summary(
         else:
             paid_installments += 1
 
-    # Collections use receipt dates within the selected month, including arrears.
-    this_month_collections = (
-        db.query(func.coalesce(func.sum(PaymentTransaction.amount), 0))
-        .join(ChitInstallment, ChitInstallment.id == PaymentTransaction.installment_id)
-        .join(ChitMember, ChitMember.id == ChitInstallment.chit_member_id)
-        .filter(
-            ChitMember.chit_id == chit_id,
-            PaymentTransaction.payment_date >= month_start,
-            PaymentTransaction.payment_date < next_month,
-        )
-        .scalar()
-    )
     total_lift_amount = db.query(func.coalesce(func.sum(ChitLift.lifted_amount), 0)).filter(
         ChitLift.company_id == company_id,
         ChitLift.chit_id == chit_id,
@@ -1069,8 +1060,8 @@ def get_chit_payment_details(
     db: Session,
     company_id: int,
     chit_id: int,
-    month: int | None = None,
-    year: int | None = None,
+    month: int,
+    year: int,
     status_filter: str | None = None,
 ):
     # =====================================================
@@ -1141,26 +1132,15 @@ def get_chit_payment_details(
     )
 
     # =====================================================
-    # MONTH FILTER
+    # Payments are always scoped to the selected calendar month.
     # =====================================================
 
-    if month is not None:
-        query = query.filter(
-            func.month(
-                ChitInstallment.due_date
-            ) == month
-        )
-
-    # =====================================================
-    # YEAR FILTER
-    # =====================================================
-
-    if year is not None:
-        query = query.filter(
-            func.year(
-                ChitInstallment.due_date
-            ) == year
-        )
+    month_start = date(year, month, 1)
+    next_month = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    query = query.filter(
+        ChitInstallment.due_date >= month_start,
+        ChitInstallment.due_date < next_month,
+    )
 
     # =====================================================
     # ORDER
@@ -1183,6 +1163,7 @@ def get_chit_payment_details(
             "summary": {
                 "total_months": 0,
                 "total_members": 0,
+                "total_records": 0,
                 "total_due": 0,
                 "total_paid": 0,
                 "total_remaining": 0,
@@ -1384,13 +1365,10 @@ def get_chit_payment_details(
     # =====================================================
     # TOTAL MONTHS
     #
-    # Count unique installment numbers.
+    # Every returned installment belongs to the selected calendar month.
     # =====================================================
 
-    total_months = len({
-        item["installment_number"]
-        for item in items
-    })
+    total_months = 1 if items else 0
 
     # =====================================================
     # RESPONSE
@@ -1402,6 +1380,9 @@ def get_chit_payment_details(
                 total_months,
 
             "total_members":
+                len({item["chit_member_id"] for item in items}),
+
+            "total_records":
                 len(items),
 
             "total_due":

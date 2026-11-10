@@ -1,4 +1,4 @@
-"""Chit financial totals, receipt dates and expense ownership regressions."""
+"""Chit totals, payments allocated to installment months, and expense ownership."""
 import unittest
 from datetime import date, datetime as real_datetime
 from decimal import Decimal
@@ -73,11 +73,11 @@ class ChitPaymentSummaryTests(unittest.TestCase):
                             payment_method='cash'))
         self.db.flush()
 
-    def test_default_dues_stop_at_current_month_and_collections_include_all_receipts(self):
+    def test_default_dues_stop_at_current_month_and_collections_follow_installment_month(self):
         for identifier, member, month in [(1, 1, 10), (2, 1, 11), (3, 1, 12), (4, 2, 11),
                                           (5, 3, 11), (6, 4, 11)]:
             self.installment(identifier, member, month)
-        # Old dues collected now and advance payments count by receipt date.
+        # Arrears and advances count toward their allocated installment month.
         for identifier, installment, month, amount in [(1, 1, 10, 100), (2, 1, 11, 200),
                                                        (3, 2, 10, 300), (4, 2, 11, 400),
                                                        (5, 3, 11, 100), (6, 5, 11, 999),
@@ -133,6 +133,77 @@ class ChitPaymentSummaryTests(unittest.TestCase):
         self.assertEqual(next_year['this_month_due'], 0)
         self.assertEqual(next_year['total_remaining'], 1000)
 
+    def test_monthly_amount_ignores_creation_and_update_timestamps(self):
+        self.installment(1, 1, 11)
+        self.payment(1, 1, 11, 250)
+        installment = self.db.get(ChitInstallment, 1)
+        payment = self.db.get(PaymentTransaction, 1)
+        installment.created_at = real_datetime(2026, 10, 25)
+        installment.updated_at = real_datetime(2026, 12, 5)
+        payment.created_at = real_datetime(2026, 10, 31, 23, 59)
+        payment.updated_at = real_datetime(2026, 12, 1)
+        self.db.flush()
+
+        november = get_chit_payment_summary(self.db, 1, 1, month=11, year=2026)
+        self.assertEqual(november['this_month_collections'], 250)
+        self.assertEqual(november['this_month_due'], 750)
+        for month in (10, 12):
+            result = get_chit_payment_summary(self.db, 1, 1, month=month, year=2026)
+            self.assertEqual(result['this_month_collections'], 0)
+
+        payment.created_at = real_datetime(2027, 1, 1)
+        payment.updated_at = real_datetime(2027, 2, 1)
+        self.db.flush()
+        self.assertEqual(get_chit_payment_summary(
+            self.db, 1, 1, month=11, year=2026,
+        )['this_month_collections'], 250)
+
+    def test_monthly_amount_follows_edited_and_deleted_transactions(self):
+        self.installment(1, 1, 11)
+        self.payment(1, 1, 11, 250)
+        payment = self.db.get(PaymentTransaction, 1)
+        payment.amount = 400
+        self.db.flush()
+        summary = get_chit_payment_summary(self.db, 1, 1, month=11, year=2026)
+        self.assertEqual(summary['this_month_collections'], 400)
+        self.assertEqual(summary['this_month_due'], 600)
+        self.db.delete(payment)
+        self.db.flush()
+        summary = get_chit_payment_summary(self.db, 1, 1, month=11, year=2026)
+        self.assertEqual(summary['this_month_collections'], 0)
+        self.assertEqual(summary['this_month_due'], 1000)
+
+    def test_payment_month_controls_collections_instead_of_receipt_or_audit_month(self):
+        self.installment(1, 1, 11)
+        self.installment(2, 1, 12)
+        # December selected in the payment form; money received in November.
+        self.payment(1, 2, 11, 600)
+        # November arrears paid in December, in two transactions.
+        self.payment(2, 1, 12, 200)
+        self.payment(3, 1, 12, 300)
+        for payment in self.db.query(PaymentTransaction).all():
+            payment.created_at = real_datetime(2027, 1, 15)
+            payment.updated_at = real_datetime(2027, 2, 15)
+        self.db.flush()
+
+        november = get_chit_payment_summary(self.db, 1, 1, month=11, year=2026)
+        december = get_chit_payment_summary(self.db, 1, 1, month=12, year=2026)
+        self.assertEqual(november['this_month_collections'], 500)
+        self.assertEqual(november['this_month_due'], 500)
+        self.assertEqual(december['this_month_collections'], 600)
+        self.assertEqual(december['this_month_due'], 400)
+        self.assertEqual(december['total_paid'], 1100)
+        self.assertEqual(get_chit_payment_summary(
+            self.db, 1, 1, month=1, year=2027,
+        )['this_month_collections'], 0)
+
+        payment = self.db.get(PaymentTransaction, 1)
+        payment.payment_date = date(2027, 1, 1)
+        self.db.flush()
+        self.assertEqual(get_chit_payment_summary(
+            self.db, 1, 1, month=12, year=2026,
+        )['this_month_collections'], 600)
+
     def test_api_forwards_selected_month_and_validates_reference(self):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
@@ -142,6 +213,7 @@ class ChitPaymentSummaryTests(unittest.TestCase):
 
         self.installment(1, 1, 10)
         self.installment(2, 1, 11)
+        self.payment(1, 1, 11, 250)
         app = FastAPI()
         app.include_router(router)
         app.dependency_overrides[get_db] = lambda: self.db
@@ -149,11 +221,13 @@ class ChitPaymentSummaryTests(unittest.TestCase):
         with TestClient(app) as client:
             selected = client.get('/chits/1/payment-summary', params={'month': 10, 'year': 2026})
             self.assertEqual(selected.status_code, 200, selected.text)
-            self.assertEqual(selected.json()['this_month_due'], 1000)
-            self.assertEqual(selected.json()['total_remaining'], 1000)
+            self.assertEqual(selected.json()['this_month_collections'], 250)
+            self.assertEqual(selected.json()['this_month_due'], 750)
+            self.assertEqual(selected.json()['total_remaining'], 750)
             default = client.get('/chits/1/payment-summary')
             self.assertEqual(default.status_code, 200, default.text)
-            self.assertEqual(default.json()['total_remaining'], 2000)
+            self.assertEqual(default.json()['this_month_collections'], 0)
+            self.assertEqual(default.json()['total_remaining'], 1750)
             self.assertEqual(default.json()['reference_month'], 11)
             self.assertEqual(client.get('/chits/1/payment-summary?month=13&year=2026').status_code, 422)
             self.assertEqual(client.get('/chits/1/payment-summary?month=10').status_code, 400)
@@ -168,7 +242,7 @@ class ChitPaymentSummaryTests(unittest.TestCase):
         self.assertEqual(get_chit_payment_summary(self.db, 1, 4)['others_amount'], 75)
         self.assertEqual(get_chit_payment_summary(self.db, 2, 1), {'error': 'chit_not_found'})
 
-    def test_december_receipt_range_excludes_next_year(self):
+    def test_december_payment_month_includes_transactions_received_next_year(self):
         self.now.now.return_value = real_datetime(2026, 12, 31, tzinfo=ZoneInfo('Asia/Kolkata'))
         self.installment(1, 1, 12)
         self.payment(1, 1, 12, 200)
@@ -176,7 +250,7 @@ class ChitPaymentSummaryTests(unittest.TestCase):
                                        payment_date=date(2027, 1, 1), payment_method='cash', created_by=1))
         self.db.flush()
         result = get_chit_payment_summary(self.db, 1, 1)
-        self.assertEqual(result['this_month_collections'], 200)
+        self.assertEqual(result['this_month_collections'], 300)
         self.assertEqual(result['this_month_due'], 700)
 
     @patch('app.services.expenses_service.create_audit_log')
