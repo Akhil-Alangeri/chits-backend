@@ -28,6 +28,13 @@ class Expense(Base):
         index=True,
     )
 
+    chit_id = Column(
+        BigInteger,
+        ForeignKey("chit_groups.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     amount = Column(
         BigInteger,
         nullable=False,
@@ -89,6 +96,3 @@ class Expense(Base):
         "User",
         foreign_keys=[created_by],
     )
-    
-    
-    

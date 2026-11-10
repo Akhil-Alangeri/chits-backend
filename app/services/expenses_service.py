@@ -3,6 +3,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.models.admin.expenses import Expense
+from app.models.admin.chit_group import ChitGroup
 from app.models.admin.user import User
 from app.schemas.expenses import ExpenseCreate, ExpenseUpdate
 from app.services.audit_log_service import (
@@ -13,6 +14,7 @@ from app.services.audit_log_service import (
 
 EXPENSE_AUDIT_FIELDS = [
     "id",
+    "chit_id",
     "category",
     "amount",
     "description",
@@ -30,6 +32,17 @@ def _expense_snapshot(expense: Expense) -> dict:
     )
 
 
+def _validate_expense_chit(db: Session, company_id: int, chit_id: int | None) -> None:
+    if chit_id is None:
+        return
+    chit = db.query(ChitGroup.id).filter(
+        ChitGroup.id == chit_id,
+        ChitGroup.company_id == company_id,
+    ).first()
+    if chit is None:
+        raise HTTPException(status_code=404, detail="Chit not found.")
+
+
 def create_expense(
     db: Session,
     payload: ExpenseCreate,
@@ -37,8 +50,10 @@ def create_expense(
     ip_address: str | None = None,
     user_agent: str | None = None,
 ) -> Expense:
+    _validate_expense_chit(db, current_user.company_id, payload.chit_id)
     expense = Expense(
         company_id=current_user.company_id,
+        chit_id=payload.chit_id,
         created_by=current_user.id,
         category=payload.category,
         amount=payload.amount,
@@ -128,6 +143,9 @@ def update_expense(
 
     update_data = payload.model_dump(exclude_unset=True)
     update_data.pop("reason", None)
+
+    if "chit_id" in update_data:
+        _validate_expense_chit(db, current_user.company_id, update_data["chit_id"])
 
     for field, value in update_data.items():
         setattr(expense, field, value)

@@ -21,6 +21,7 @@ ExpensePaymentMethod = Literal[
 
 
 class ExpenseCreate(BaseModel):
+    chit_id: int | None = Field(default=None, gt=0)
     category: ExpenseCategory
     amount: int = Field(..., gt=0)
     description: str | None = Field(default=None, max_length=2000)
@@ -58,6 +59,7 @@ class ExpenseCreate(BaseModel):
 
 
 class ExpenseUpdate(BaseModel):
+    chit_id: int | None = Field(default=None, gt=0)
     category: ExpenseCategory | None = None
     amount: int | None = Field(default=None, gt=0)
     description: str | None = Field(default=None, max_length=2000)
@@ -112,6 +114,7 @@ class ExpenseUpdate(BaseModel):
 
 class ExpenseResponse(BaseModel):
     id: int
+    chit_id: int | None = None
     company_id: int
     category: ExpenseCategory
     amount: int

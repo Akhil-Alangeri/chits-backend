@@ -2,6 +2,7 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Query,
 )
 
 from sqlalchemy.orm import Session
@@ -38,6 +39,8 @@ router = APIRouter(
 )
 def get_chit_summary(
     chit_id: int,
+    month: int | None = Query(default=None, ge=1, le=12),
+    year: int | None = Query(default=None, ge=2000, le=2100),
 
     db: Session = Depends(get_db),
 
@@ -46,10 +49,15 @@ def get_chit_summary(
     ),
 ):
 
+    if (month is None) != (year is None):
+        raise HTTPException(status_code=400, detail="Month and year must be provided together.")
+
     result = get_chit_payment_summary(
         db=db,
         company_id=current_user.company_id,
         chit_id=chit_id,
+        month=month,
+        year=year,
     )
 
 

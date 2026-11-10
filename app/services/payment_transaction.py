@@ -1,5 +1,7 @@
 from concurrent.interpreters import get_current
 from enum import member
+from datetime import datetime, date
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -10,6 +12,8 @@ from app.models.admin.chit_installment import ChitInstallment
 from app.models.admin.chit_member import ChitMember
 from app.models.admin.payment_transaction import PaymentTransaction
 from app.models.admin.customer_profile import CustomerProfile
+from app.models.admin.chitlift import ChitLift
+from app.models.admin.expenses import Expense
 from app.services.audit_log_service import create_audit_log, snapshot_model
 
 
@@ -448,13 +452,12 @@ def get_payments_for_installment(
     return payments
 
 
-
-
-
 def get_chit_payment_summary(
     db: Session,
     company_id: int,
     chit_id: int,
+    month: int | None = None,
+    year: int | None = None,
 ):
     # =====================================================
     # VERIFY CHIT
@@ -475,98 +478,93 @@ def get_chit_payment_summary(
         }
 
 
-    # =====================================================
-    # GET INSTALLMENTS
-    # =====================================================
+    # The selected month controls monthly amounts and the cumulative due cutoff.
+    # Without a selection, use the current calendar month in India.
+    today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    month_start = date(year if year is not None else today.year,
+                       month if month is not None else today.month, 1)
+    next_month = date(month_start.year + (month_start.month == 12), month_start.month % 12 + 1, 1)
 
+    paid_by_installment = (
+        db.query(
+            PaymentTransaction.installment_id,
+            func.sum(PaymentTransaction.amount).label("paid_amount"),
+        )
+        .join(ChitInstallment, ChitInstallment.id == PaymentTransaction.installment_id)
+        .join(ChitMember, ChitMember.id == ChitInstallment.chit_member_id)
+        .filter(ChitMember.chit_id == chit_id)
+        .group_by(PaymentTransaction.installment_id)
+        .subquery()
+    )
     installments = (
-        db.query(ChitInstallment)
-        .join(
-            ChitMember,
-            ChitMember.id == ChitInstallment.chit_member_id,
+        db.query(
+            ChitInstallment.due_date,
+            ChitInstallment.due_amount,
+            func.coalesce(paid_by_installment.c.paid_amount, 0).label("paid_amount"),
         )
-        .filter(
-            ChitMember.chit_id == chit_id,
-        )
+        .join(ChitMember, ChitMember.id == ChitInstallment.chit_member_id)
+        .outerjoin(paid_by_installment, paid_by_installment.c.installment_id == ChitInstallment.id)
+        .filter(ChitMember.chit_id == chit_id)
         .all()
     )
 
-
-    total_due = 0
-    total_paid = 0
-
-    paid_installments = 0
-    partial_installments = 0
-    pending_installments = 0
-
-
-    # =====================================================
-    # CALCULATE
-    # =====================================================
+    total_due = total_paid = total_remaining = this_month_due = 0
+    paid_installments = partial_installments = pending_installments = 0
 
     for installment in installments:
-
-        due_amount = int(
-            installment.due_amount
-        )
-
-        paid_amount = (
-            db.query(
-                func.coalesce(
-                    func.sum(
-                        PaymentTransaction.amount
-                    ),
-                    0,
-                )
-            )
-            .filter(
-                PaymentTransaction.installment_id
-                == installment.id
-            )
-            .scalar()
-        )
-
-        paid_amount = int(
-            paid_amount or 0
-        )
-
-        total_due += due_amount
-
+        due_amount = int(installment.due_amount or 0)
+        paid_amount = int(installment.paid_amount or 0)
+        remaining_amount = max(due_amount - paid_amount, 0)
+        if installment.due_date < next_month:
+            total_due += due_amount
+            total_remaining += remaining_amount
+        # Collections remain the actual total received across all installments.
         total_paid += paid_amount
-
-
+        if month_start <= installment.due_date < next_month:
+            this_month_due += remaining_amount
         if paid_amount <= 0:
-
             pending_installments += 1
-
         elif paid_amount < due_amount:
-
             partial_installments += 1
-
         else:
-
             paid_installments += 1
 
+    # Collections use receipt dates within the selected month, including arrears.
+    this_month_collections = (
+        db.query(func.coalesce(func.sum(PaymentTransaction.amount), 0))
+        .join(ChitInstallment, ChitInstallment.id == PaymentTransaction.installment_id)
+        .join(ChitMember, ChitMember.id == ChitInstallment.chit_member_id)
+        .filter(
+            ChitMember.chit_id == chit_id,
+            PaymentTransaction.payment_date >= month_start,
+            PaymentTransaction.payment_date < next_month,
+        )
+        .scalar()
+    )
+    total_lift_amount = db.query(func.coalesce(func.sum(ChitLift.lifted_amount), 0)).filter(
+        ChitLift.company_id == company_id,
+        ChitLift.chit_id == chit_id,
+    ).scalar()
+    others_amount = db.query(func.coalesce(func.sum(Expense.amount), 0)).filter(
+        Expense.company_id == company_id,
+        Expense.chit_id == chit_id,
+    ).scalar()
 
     return {
         "total_due": total_due,
-
         "total_paid": total_paid,
-
-        "total_remaining":
-            max(
-                total_due - total_paid,
-                0,
-            ),
-
-        "paid_installments":
-            paid_installments,
-
-        "partial_installments":
-            partial_installments,
-
-        "pending_installments":
-            pending_installments,
+        "total_remaining": total_remaining,
+        "paid_installments": paid_installments,
+        "partial_installments": partial_installments,
+        "pending_installments": pending_installments,
+        "total_lift_amount": total_lift_amount,
+        "others_amount": int(others_amount or 0),
+        "this_month_collections": int(this_month_collections or 0),
+        "this_month_due": this_month_due,
+        "current_month": today.month,
+        "current_year": today.year,
+        "reference_month": month_start.month,
+        "reference_year": month_start.year,
     }
     
  

@@ -6,6 +6,7 @@ from app.models.admin.customer_profile import CustomerProfile
 from app.models.admin.chit_group import ChitGroup
 from app.models.admin.chit_member import ChitMember
 from app.models.admin.chit_installment import ChitInstallment
+from app.models.admin.chitlift import ChitLift
 from app.models.admin.payment_transaction import PaymentTransaction
 from app.services.audit_log_service import (
     create_audit_log,
@@ -265,6 +266,31 @@ def update_customer_profile(
 
     customer.status = (
         customer_data.status
+    )
+
+    # Payments and receipts read member_name; auctions read customer_name.
+    # Sync every linked slot, including past memberships, in this transaction.
+    # Run on every save so previously stale names are repaired as well.
+    company_chit_ids = db.query(ChitGroup.id).filter(
+        ChitGroup.company_id == company_id,
+    )
+    customer_members = db.query(ChitMember).filter(
+        ChitMember.customer_profile_id == customer.id,
+        ChitMember.chit_id.in_(company_chit_ids),
+    )
+    customer_member_ids = customer_members.with_entities(ChitMember.id)
+
+    customer_members.update(
+        {ChitMember.member_name: customer.display_name},
+        synchronize_session="fetch",
+    )
+
+    db.query(ChitLift).filter(
+        ChitLift.company_id == company_id,
+        ChitLift.chit_member_id.in_(customer_member_ids),
+    ).update(
+        {ChitLift.customer_name: customer.display_name},
+        synchronize_session="fetch",
     )
 
     db.flush()

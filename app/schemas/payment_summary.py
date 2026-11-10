@@ -14,6 +14,22 @@ class ChitPaymentSummaryResponse(BaseModel):
     partial_installments: int
 
     pending_installments: int
+
+    total_lift_amount: float
+
+    others_amount: int
+
+    this_month_collections: int
+
+    this_month_due: int
+
+    current_month: int
+
+    current_year: int
+
+    reference_month: int
+
+    reference_year: int
     
 
 
